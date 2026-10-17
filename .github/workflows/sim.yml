@@ -8,9 +8,9 @@ on:
         required: false
         default: "1,2"
       max_steps:
-        description: Max actions per session
+        description: Safety cap on actions per session. Hitting it is an anomaly, not a quit.
         required: false
-        default: "48"
+        default: "500"
   pull_request:
 
 jobs:

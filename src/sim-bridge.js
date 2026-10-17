@@ -34,6 +34,10 @@ function currentAd(view, rewardKind, breakAfter) {
   return null;
 }
 
+export function detectGameOver(phase, screen) {
+  return phase === 'game_over' || screen === 'game_over';
+}
+
 export function attachSimBridge(api) {
   if (typeof window === 'undefined') return;
   const params = new URLSearchParams(window.location.search);
@@ -62,6 +66,7 @@ export function attachSimBridge(api) {
       combo: match.combo,
       streak: match.streak,
       failed: match.phase === 'game_over' || view.screen === 'game_over',
+      gameOver: detectGameOver(match.phase, view.screen),
       ended: false,
       ad: currentAd(view, api.getRewardKind(), api.getBreak()),
       actions,
@@ -79,7 +84,16 @@ export function attachSimBridge(api) {
     return { ok: false, reason: 'unknown' };
   }
 
-  const bridge = { ready: false, getState, perform };
+  const bridge = {
+    ready: false,
+    getState,
+    perform,
+    isGameOver() {
+      const match = api.getMatch();
+      const view = api.getView();
+      return detectGameOver(match.phase, view.screen);
+    }
+  };
   window.__playerSim = bridge;
   bridge.ready = true;
 }

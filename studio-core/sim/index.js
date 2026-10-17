@@ -1,10 +1,10 @@
 export { ADAPTER_METHODS, assertAdapter } from './adapter.js';
 export { buildReport, runComparison } from './compare.js';
-export { PERSONAS, chooseAction, resolvePersona } from './personas.js';
+export { PERSONAS, chooseAction, freshMood, quitReasonForMood, resolvePersona, tickMood } from './personas.js';
 export { formatSummary, writeReport } from './report.js';
 export { wouldReturn } from './retention.js';
 export { mulberry32 } from './rng.js';
-export { runSession } from './session.js';
+export { runSession, SAFETY_CAP } from './session.js';
 export { startStaticServer } from './static-server.js';
 export { createOllamaClient } from './analyze/ollama.js';
 export { runAnalyze } from './analyze/run.js';

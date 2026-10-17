@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { runComparison } from './compare.js';
 import { resolvePersona } from './personas.js';
 import { formatSummary, writeReport } from './report.js';
+import { SAFETY_CAP } from './session.js';
 
 function parseArgs(argv) {
   const args = {
@@ -11,7 +12,7 @@ function parseArgs(argv) {
     variants: [],
     seeds: [1, 2],
     personas: ['casual', 'skilled', 'quitter', 'ad-averse'],
-    maxSteps: 48,
+    maxSteps: SAFETY_CAP,
     out: 'sim/out',
     personaFile: ''
   };
@@ -50,7 +51,7 @@ function parseArgs(argv) {
   if (!args.adapter) throw new Error('--adapter is required');
   if (args.variants.length < 2) throw new Error('pass at least two --variant id=path arguments');
   if (!args.seeds.length) throw new Error('--seeds needs at least one integer');
-  if (!Number.isInteger(args.maxSteps) || args.maxSteps < 1) throw new Error('--max-steps must be a positive integer');
+  if (!Number.isInteger(args.maxSteps) || args.maxSteps < 1) throw new Error('--max-steps must be a positive safety cap');
   return args;
 }
 

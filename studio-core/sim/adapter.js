@@ -1,4 +1,4 @@
-export const ADAPTER_METHODS = ['start', 'readState', 'listActions', 'perform', 'stop'];
+export const ADAPTER_METHODS = ['start', 'readState', 'listActions', 'perform', 'isGameOver', 'stop'];
 
 export function assertAdapter(adapter) {
   if (!adapter || typeof adapter !== 'object') {

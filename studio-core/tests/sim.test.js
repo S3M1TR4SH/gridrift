@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { assertAdapter } from '../sim/adapter.js';
 import { buildReport, runComparison } from '../sim/compare.js';
-import { chooseAction, resolvePersona } from '../sim/personas.js';
+import { chooseAction, quitReasonForMood, resolvePersona, tickMood } from '../sim/personas.js';
 import { formatSummary, writeReport } from '../sim/report.js';
 import { wouldReturn } from '../sim/retention.js';
 import { mulberry32 } from '../sim/rng.js';
@@ -52,7 +52,7 @@ test('chooseAction is stable for a seed and can pick different moves', () => {
 });
 
 test('a perfect skill rating takes the clearer move', () => {
-  const persona = resolvePersona('skilled', { skill: 1, quitChance: 0, hintRate: 0 });
+  const persona = resolvePersona('skilled', { skill: 1, hintRate: 0 });
   const decision = chooseAction({
     persona,
     state: {
@@ -81,7 +81,8 @@ test('ad-averse retention drops further than skilled retention for the same ads'
     finalScore: 40,
     failPoints: [{ step: 4 }],
     adMoments: [{ kind: 'interstitial' }, { kind: 'rewarded' }, { kind: 'rewarded' }],
-    endReason: 'max_steps',
+    endReason: 'game_over',
+    quitReason: 'game_over',
     steps: 40
   };
   const averse = wouldReturn({ persona: resolvePersona('ad-averse'), log });
@@ -110,6 +111,10 @@ function scriptedAdapter(frames, variantId) {
       index += 1;
       return { ok: true };
     },
+    async isGameOver() {
+      const state = await this.readState();
+      return state.gameOver === true || state.screen === 'game_over';
+    },
     async advanceTime() {},
     async stop() {}
   };
@@ -118,10 +123,12 @@ function scriptedAdapter(frames, variantId) {
 const scriptedPersona = {
   id: 'scripted',
   skill: 1,
-  quitChance: 0,
-  patience: 100,
+  frustrationThreshold: 20,
+  frustrationDecay: 0.5,
+  noFitGain: 1,
+  failedGain: 1,
+  boredomMoves: 20,
   adWatchRate: 0,
-  quitOnAd: 0,
   continueRate: 0,
   restartRate: 0,
   maxRestarts: 0,
@@ -215,7 +222,9 @@ test('runSession records clears, combos, ads, fail points, and a quit', async ()
   assert.equal(log.variant, 'control');
   assert.equal(log.persona, 'scripted');
   assert.equal(log.seed, 3);
-  assert.equal(log.endReason, 'quit');
+  assert.equal(log.endReason, 'game_over');
+  assert.equal(log.quitReason, 'game_over');
+  assert.equal(log.anomaly, null);
   assert.equal(log.clears, 2);
   assert.deepEqual(log.clearEvents, [{ step: 3, delta: 2, total: 2 }]);
   assert.deepEqual(log.combos, [{ step: 3, lines: 2 }]);
@@ -280,6 +289,7 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
         sessionLengthMs: 1000,
         steps: 1,
         endReason: 'quit',
+        quitReason: 'boredom',
         finalScore: 0,
         peakScore: 0,
         clears: 0,
@@ -294,7 +304,9 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
         seed: 1,
         sessionLengthMs: 3000,
         steps: 3,
-        endReason: 'max_steps',
+        endReason: 'anomaly',
+        quitReason: null,
+        anomaly: 'safety_cap',
         finalScore: 10,
         peakScore: 10,
         clears: 2,
@@ -322,6 +334,8 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
   assert.match(markdown, /would-return/i);
   assert.match(markdown, /delta/i);
   assert.match(markdown, /casual/);
+  assert.match(markdown, /boredom/);
+  assert.match(markdown, /safety_cap/);
 
   const dir = await mkdtemp(join(tmpdir(), 'sim-report-'));
   try {
@@ -336,15 +350,152 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
 });
 
 test('assertAdapter rejects a partial adapter', () => {
-  assert.throws(() => assertAdapter({ start() {}, readState() {}, listActions() {}, perform() {} }), /stop/);
+  assert.throws(() => assertAdapter({ start() {}, readState() {}, listActions() {}, perform() {} }), /isGameOver/);
   const adapter = {
     async start() {},
     async readState() { return {}; },
     async listActions() { return []; },
     async perform() { return { ok: true }; },
+    async isGameOver() { return false; },
     async stop() {}
   };
   assert.equal(assertAdapter(adapter), adapter);
+});
+
+test('frustration accumulates with decay and boredom is a move threshold', () => {
+  const quitter = resolvePersona('quitter');
+  const stuck = tickMood(quitter, { frustration: 0, movesSinceClear: 0 }, 'noFit');
+  assert.equal(quitReasonForMood(quitter, stuck), 'frustration');
+  const oneMiss = tickMood(quitter, { frustration: 0, movesSinceClear: 0 }, 'failed');
+  assert.equal(quitReasonForMood(quitter, oneMiss), 'frustration');
+  assert.equal(oneMiss.movesSinceClear, 1);
+  const skilled = resolvePersona('skilled');
+  const once = tickMood(skilled, { frustration: 0, movesSinceClear: 0 }, 'noFit');
+  const again = tickMood(skilled, once, 'noFit');
+  assert.equal(quitReasonForMood(skilled, once), null);
+  assert.equal(quitReasonForMood(skilled, again), null);
+  assert.ok(again.frustration > once.frustration);
+  const cooled = tickMood(skilled, once, 'move');
+  assert.ok(cooled.frustration < once.frustration);
+  assert.equal(cooled.movesSinceClear, 1);
+  const recovered = tickMood(skilled, { frustration: 2, movesSinceClear: 4 }, 'clear');
+  assert.ok(recovered.frustration < 2);
+  assert.equal(recovered.movesSinceClear, 0);
+
+  const bored = chooseAction({
+    persona: quitter,
+    state: {
+      screen: 'play',
+      failed: false,
+      ended: false,
+      ad: null,
+      actions: [{ type: 'move', id: 'open', pieceIndex: 0, x: 0, y: 0, lines: 1, cells: 1 }]
+    },
+    rng: mulberry32(2),
+    mood: { frustration: 0, movesSinceClear: quitter.boredomMoves },
+    gameOver: false,
+    adCount: 0,
+    restarts: 0
+  });
+  assert.equal(bored.quitReason, 'boredom');
+
+  const calm = chooseAction({
+    persona: resolvePersona('casual'),
+    state: {
+      screen: 'play',
+      failed: false,
+      ended: false,
+      ad: null,
+      actions: [{ type: 'move', id: 'open', pieceIndex: 0, x: 0, y: 0, lines: 1, cells: 1 }]
+    },
+    rng: mulberry32(2),
+    mood: { frustration: 0, movesSinceClear: 0 },
+    gameOver: false,
+    adCount: 0,
+    restarts: 0,
+    step: 1000
+  });
+  assert.equal(calm.type, 'action');
+});
+
+test('ad-averse quits on an ad and casual closes it', () => {
+  const state = {
+    screen: 'ad_break',
+    failed: false,
+    ended: false,
+    ad: { kind: 'interstitial', screen: 'ad_break', placement: 'between_rounds' },
+    actions: [{ type: 'ui', id: 'close_ad', uiId: 'close_ad' }]
+  };
+  const shared = { state, rng: mulberry32(1), mood: { frustration: 0, movesSinceClear: 0 }, gameOver: false, adCount: 1, restarts: 0 };
+  const averse = chooseAction({ ...shared, persona: resolvePersona('ad-averse') });
+  const casual = chooseAction({ ...shared, persona: resolvePersona('casual'), rng: mulberry32(1) });
+  assert.equal(averse.quitReason, 'ad');
+  assert.equal(averse.reaction, 'quit');
+  assert.equal(casual.type, 'action');
+  assert.equal(casual.action.uiId, 'close_ad');
+});
+
+test('a safety cap is an anomaly and game over is not a no-fit quit', async () => {
+  const endless = {
+    async start() {},
+    async readState() {
+      return { screen: 'play', score: 1, clears: 1, combo: 0, failed: false, ended: false, ad: null, actions: [] };
+    },
+    async listActions() {
+      return [{ type: 'move', id: 'm', pieceIndex: 0, x: 0, y: 0, lines: 1, cells: 1 }];
+    },
+    async perform() { return { ok: true }; },
+    async isGameOver() { return false; },
+    async stop() {}
+  };
+  const capped = await runSession({
+    adapter: endless,
+    persona: resolvePersona('skilled', { boredomMoves: 100, frustrationThreshold: 100, hintRate: 0, thinkMs: 0 }),
+    seed: 1,
+    maxSteps: 4
+  });
+  assert.equal(capped.endReason, 'anomaly');
+  assert.equal(capped.anomaly, 'safety_cap');
+  assert.equal(capped.quitReason, null);
+  assert.equal(capped.steps, 4);
+
+  const empty = {
+    async start() {},
+    async readState() {
+      return { screen: 'play', score: 0, clears: 0, combo: 0, failed: false, ended: false, ad: null };
+    },
+    async listActions() { return []; },
+    async perform() { return { ok: true }; },
+    async isGameOver() { return false; },
+    async stop() {}
+  };
+  const rage = await runSession({
+    adapter: empty,
+    persona: resolvePersona('quitter', { thinkMs: 0 }),
+    seed: 2,
+    maxSteps: 10
+  });
+  assert.equal(rage.quitReason, 'frustration');
+  assert.equal(rage.endReason, 'quit');
+
+  const finished = {
+    async start() {},
+    async readState() {
+      return { screen: 'game_over', score: 3, clears: 1, combo: 0, failed: true, ended: false, ad: null };
+    },
+    async listActions() { return []; },
+    async perform() { return { ok: true }; },
+    async isGameOver() { return true; },
+    async stop() {}
+  };
+  const over = await runSession({
+    adapter: finished,
+    persona: resolvePersona('quitter', { continueRate: 0, restartRate: 0, thinkMs: 0 }),
+    seed: 3,
+    maxSteps: 10
+  });
+  assert.equal(over.quitReason, 'game_over');
+  assert.equal(over.endReason, 'game_over');
 });
 
 test('static server serves an overridden config path', async () => {

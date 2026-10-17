@@ -36,7 +36,7 @@ export function formatSummary(report) {
   const lines = [
     '# Player simulation',
     '',
-    `Compared ${variants.length} variants across ${personas.length} persona${personas.length === 1 ? '' : 's'} and ${seeds.length} seed${seeds.length === 1 ? '' : 's'} (${sessions.length} sessions, max ${maxSteps} steps).`,
+    `Compared ${variants.length} variants across ${personas.length} persona${personas.length === 1 ? '' : 's'} and ${seeds.length} seed${seeds.length === 1 ? '' : 's'} (${sessions.length} sessions, safety cap ${maxSteps} steps).`,
     `Personas: ${personas.join(', ')}. Seeds: ${seeds.join(', ')}.`,
     `Baseline is ${baseline}. The same seeds are used for every variant. Session length is the sum of persona think time.`,
     '',
@@ -54,11 +54,17 @@ export function formatSummary(report) {
     if (!metrics) continue;
     lines.push(`### ${persona}`, '', table(metrics, variants), '');
   }
+  lines.push('## Sessions', '', '| Variant | Persona | Seed | Steps | Quit reason | Anomaly |', '| --- | --- | ---: | ---: | --- | --- |');
+  for (const session of sessions) {
+    lines.push(`| ${cell(session.variant)} | ${cell(session.persona)} | ${cell(session.seed)} | ${cell(session.steps)} | ${cell(session.quitReason)} | ${cell(session.anomaly)} |`);
+  }
   lines.push(
+    '',
     '## Notes',
     '',
-    'Would-return is a 0 to 1 heuristic. Clears, combos, and peak score raise it. Fail points lower it. Ad moments lower it in proportion to that persona\'s ad aversion.',
-    'A quit, a stuck board, or the step cap ends the session. Ad reactions are close, watch, decline, or quit.',
+    'Would-return is a 0 to 1 heuristic. Clears, combos, and peak score raise it. Fail points lower it. Ad moments lower it in proportion to that persona\'s ad aversion. A frustration, boredom, or ad quit subtracts 0.04.',
+    'Quit reasons are frustration (no-fit moves and failed attempts, with decay), boredom (no clears for that persona\'s move threshold), ad (ad-averse only), or game_over (left a finished match). The safety cap is an anomaly, not a quit.',
+    'Ad reactions are close, watch, decline, or quit.',
     ''
   );
   return `${lines.join('\n')}`;
