@@ -1,0 +1,51 @@
+name: sim
+
+on:
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: Comma-separated session seeds
+        required: false
+        default: "1,2"
+      max_steps:
+        description: Max actions per session
+        required: false
+        default: "48"
+  pull_request:
+
+jobs:
+  player-sim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run player simulation
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run sim -- --seeds "${{ inputs.seeds }}" --max-steps "${{ inputs.max_steps }}"
+          else
+            npm run sim
+          fi
+      - name: Post summary
+        if: success()
+        run: cat sim/out/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: player-sim
+          path: |
+            sim/out/results.json
+            sim/out/summary.md
+          if-no-files-found: error

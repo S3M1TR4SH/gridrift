@@ -29,6 +29,7 @@ import { LEVELS } from './levels.js';
 import { canPlace, createMatch } from './logic.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
+import { attachSimBridge } from './sim-bridge.js';
 import { createUi } from './ui.js';
 
 const FALLBACK_TUNING = {
@@ -362,6 +363,24 @@ function start() {
     };
   }
 
+  function commitPlace(index, x, y) {
+    const result = match.place(index, x, y);
+    if (!result.ok) {
+      audio.play('sfx.error');
+      return result;
+    }
+    audio.play('sfx.place');
+    tracker.track('piece_placed', { cells: result.gained, x, y });
+    if (result.lines > 0) {
+      audio.play(result.combo >= 2 ? 'sfx.combo' : 'sfx.line_clear');
+      tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
+      if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
+    }
+    if (result.roundComplete) finishRound();
+    else if (result.gameOver) finishGame();
+    return result;
+  }
+
   function onPointer(type, event) {
     const point = pointFrom(event);
     const previewPiece = pointer.drag
@@ -380,20 +399,7 @@ function start() {
       return;
     }
     if (reduced.effect.type === 'place') {
-      const result = match.place(reduced.effect.index, reduced.effect.x, reduced.effect.y);
-      if (!result.ok) {
-        audio.play('sfx.error');
-        return;
-      }
-      audio.play('sfx.place');
-      tracker.track('piece_placed', { cells: result.gained, x: reduced.effect.x, y: reduced.effect.y });
-      if (result.lines > 0) {
-        audio.play(result.combo >= 2 ? 'sfx.combo' : 'sfx.line_clear');
-        tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
-        if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
-      }
-      if (result.roundComplete) finishRound();
-      else if (result.gameOver) finishGame();
+      commitPlace(reduced.effect.index, reduced.effect.x, reduced.effect.y);
     }
   }
 
@@ -466,6 +472,24 @@ function start() {
     publishOverlay(false);
     requestAnimationFrame(frame);
   }
+
+  attachSimBridge({
+    getMatch: () => match.state,
+    getView: () => viewModel({
+      screen: screen(),
+      rewarded: Boolean(overlay?.rewarded),
+      kind: overlay?.kind || rewardKind,
+      score: match.state.score,
+      bestStreak: match.state.bestStreak,
+      roundName: level().name
+    }),
+    getRewardKind: () => overlay?.kind || rewardKind || null,
+    getBreak: () => overlay?.after || null,
+    getRound: () => level().name,
+    canHint: () => screen() === 'play' && !consent?.isChild && pacer.canOfferRewarded('hint'),
+    performUi: (id) => onAction(id),
+    performMove: (index, x, y) => commitPlace(index, x, y)
+  });
 
   measure();
   publishOverlay(true);

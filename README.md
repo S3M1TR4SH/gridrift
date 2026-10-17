@@ -2,11 +2,11 @@
 
 Gridrift is a small HTML5 canvas puzzle. Drag pieces onto the grid, clear full rows and columns, and chain a streak. The board is a 10 by 10 grid. Rounds raise a clear target, then the same board continues.
 
-Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.1.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
+Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.2.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
 
 ## Dev setup
 
-Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Prompt and PowerShell. No extra packages are required.
+Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Prompt and PowerShell. No extra packages are required to play or to run `npm test`. The player simulation below installs Playwright.
 
 1. Install Node from [nodejs.org](https://nodejs.org/) if `node -v` is missing or older than 22.
 2. Open Command Prompt or PowerShell and go to this folder:
@@ -58,6 +58,22 @@ Ads are placeholder hooks. There is no ad SDK, no key, and no ad request. A full
 The age gate treats players under 13 as children: no ads and no analytics. Everyone else sees an opt-in for on-device stats. Until that opt-in, events are dropped. The tracker has no send path.
 
 `npm test` fails if `config/pacing.json` or `config/tuning.json` exceeds a guardrail. The suite includes an over-limit config so that check is not a no-op. GitHub Actions runs the same command.
+
+## Player simulation
+
+`studio-core/sim/` is a headless, game-agnostic session runner. Personas play through `sim/gridrift-adapter.js`, which opens this game in Chromium only when the page is loaded with `?sim=1`. Game rules are unchanged. The adapter forwards placements and buttons through the same paths a player uses, and it serves an alternate `config/pacing.json` per variant.
+
+Playing and `npm test` still need no packages. The simulation does:
+
+```bat
+npm install
+npx playwright install chromium
+npm run sim
+```
+
+That runs casual, skilled, quitter, and ad-averse personas against the shipped pacing file and `sim/variants/quiet-ads.json`, using the same seeds for both. It writes `sim/out/results.json` and `sim/out/summary.md`.
+
+The adapter contract and the steps for another game are in `studio-core/sim/README.md`. GitHub Actions workflow `sim` runs the same command on pull requests and `workflow_dispatch`, uploads those two files, and posts the markdown on the job summary.
 
 ## Deploy on Vercel
 

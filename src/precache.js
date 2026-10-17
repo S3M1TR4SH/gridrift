@@ -17,6 +17,7 @@ export const PRECACHE_URLS = [
   './src/ui.js',
   './src/levels.js',
   './src/rng.js',
+  './src/sim-bridge.js',
   './src/precache.js',
   './src/styles.css',
   './studio-core/guardrails/limits.js',

@@ -11,6 +11,10 @@
     "test": "node --test",
     "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js tests/shipped-config.test.js",
     "build": "node scripts/build-static.js",
-    "icons": "node scripts/generate-icons.js"
+    "icons": "node scripts/generate-icons.js",
+    "sim": "node studio-core/sim/cli.js --adapter sim/gridrift-adapter.js --variant control=config/pacing.json --variant quiet=sim/variants/quiet-ads.json --seeds 1,2 --personas casual,skilled,quitter,ad-averse --max-steps 48 --out sim/out"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
   }
 }
