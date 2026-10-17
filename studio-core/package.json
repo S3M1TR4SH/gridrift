@@ -1,0 +1,10 @@
+{
+  "name": "@studio/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained studio core: guardrails, pacing, consent, analytics, and PWA helpers. No game imports.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "gridrift",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test",
+    "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js tests/shipped-config.test.js",
+    "build": "node scripts/build-static.js",
+    "icons": "node scripts/generate-icons.js"
+  }
+}
