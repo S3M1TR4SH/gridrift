@@ -1,4 +1,6 @@
-export const PERSONAS = {
+import humanCalibration from './calibration/human.json' with { type: 'json' };
+
+const PERSONA_BASE = {
   casual: {
     id: 'casual',
     skill: 0.35,
@@ -74,6 +76,10 @@ export const PERSONAS = {
   }
 };
 
+export const PERSONAS = Object.fromEntries(
+  Object.entries(PERSONA_BASE).map(([id, persona]) => [id, { ...persona, ...(humanCalibration[id] ?? {}) }])
+);
+
 export function resolvePersona(input, overrides = {}) {
   const base = typeof input === 'string' ? PERSONAS[input] : input;
   if (!base?.id) {
@@ -102,11 +108,38 @@ function compareMoves(left, right) {
     || String(left.id).localeCompare(String(right.id));
 }
 
-function pickMove(moves, persona, rng) {
+function pickLegacy(moves, persona, rng) {
   const ranked = [...moves].sort(compareMoves);
   if (roll(rng, persona.skill)) return ranked[0];
   const index = Math.floor(rng() * ranked.length);
   return ranked[index];
+}
+
+function humanScore(move, persona, rng, lastMove) {
+  const look = Number(persona.lookahead) || 0;
+  let rest = 0;
+  if (look > 0 && roll(rng, persona.lookProb ?? 1)) {
+    const value = look >= 2 && move.rest2 != null ? move.rest2 : move.rest1;
+    if (value != null) rest = value < 0 ? -1e4 : value * 100;
+  }
+  let score = (move.lines || 0) * 100 + rest
+    + (move.fill || 0) * (persona.wFill ?? 0)
+    + (move.contact || 0) * (persona.wContact ?? 0)
+    - (move.holes || 0) * (persona.wHoles ?? 0);
+  if (lastMove) score -= (persona.wNear ?? 0) * (Math.abs(move.x - lastMove.x) + Math.abs(move.y - lastMove.y));
+  return score + (persona.noise ?? 0) * (rng() - 0.5);
+}
+
+function pickMove(moves, persona, rng, lastMove) {
+  if (persona.placement !== 'human') return pickLegacy(moves, persona, rng);
+  const ranked = moves
+    .map((move) => ({ move, score: humanScore(move, persona, rng, lastMove) }))
+    .sort((left, right) => right.score - left.score || compareMoves(left.move, right.move));
+  if (roll(rng, persona.blunderRate)) {
+    const k = Math.min(ranked.length, Math.max(1, persona.blunderTopK ?? 3));
+    return ranked[Math.floor(rng() * k)].move;
+  }
+  return ranked[0].move;
 }
 
 function round3(value) {
@@ -141,7 +174,7 @@ function quit(quitReason, mood, reaction) {
   return { type: 'quit', quitReason, mood, ...(reaction ? { reaction } : {}) };
 }
 
-export function chooseAction({ persona, state, rng, mood = freshMood(), gameOver = false, adCount = 0, restarts = 0 }) {
+export function chooseAction({ persona, state, rng, mood = freshMood(), gameOver = false, adCount = 0, restarts = 0, lastMove = null }) {
   const actions = state.actions ?? [];
   const button = (id) => uiAction(actions, id);
 
@@ -205,5 +238,5 @@ export function chooseAction({ persona, state, rng, mood = freshMood(), gameOver
   if (button('offer_hint') && roll(rng, persona.hintRate)) {
     return { type: 'action', action: button('offer_hint'), mood };
   }
-  return { type: 'action', action: pickMove(moves, persona, rng), mood };
+  return { type: 'action', action: pickMove(moves, persona, rng, lastMove), mood };
 }

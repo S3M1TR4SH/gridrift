@@ -1,0 +1,54 @@
+{
+  "casual": {
+    "placement": "human",
+    "lookahead": 1,
+    "lookProb": 0.7,
+    "wFill": 3,
+    "wContact": 1,
+    "wHoles": 4,
+    "wNear": 2,
+    "noise": 10,
+    "blunderRate": 0.12,
+    "blunderTopK": 3,
+    "thinkMs": 3500
+  },
+  "skilled": {
+    "placement": "human",
+    "lookahead": 2,
+    "lookProb": 1,
+    "wFill": 3,
+    "wContact": 1,
+    "wHoles": 4,
+    "wNear": 1,
+    "noise": 3,
+    "blunderRate": 0.03,
+    "blunderTopK": 3,
+    "thinkMs": 2200
+  },
+  "quitter": {
+    "placement": "human",
+    "lookahead": 1,
+    "lookProb": 0.5,
+    "wFill": 3,
+    "wContact": 1,
+    "wHoles": 4,
+    "wNear": 3,
+    "noise": 15,
+    "blunderRate": 0.2,
+    "blunderTopK": 3,
+    "thinkMs": 3000
+  },
+  "ad-averse": {
+    "placement": "human",
+    "lookahead": 1,
+    "lookProb": 0.8,
+    "wFill": 3,
+    "wContact": 1,
+    "wHoles": 4,
+    "wNear": 2,
+    "noise": 8,
+    "blunderRate": 0.08,
+    "blunderTopK": 3,
+    "thinkMs": 3000
+  }
+}

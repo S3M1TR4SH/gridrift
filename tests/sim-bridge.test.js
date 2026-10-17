@@ -18,8 +18,31 @@ test('move listing reports a completing line and leaves the board unchanged', ()
   const clear = moves.find((move) => move.x === 3 && move.y === 0);
   assert.equal(clear.lines, 1);
   assert.equal(clear.cells, 1);
+  assert.equal(clear.fill, 4);
+  assert.equal(clear.contact, 3);
+  assert.equal(clear.holes, 0);
+  assert.equal(clear.rest1, 0);
+  assert.equal(clear.rest2, 0);
   assert.equal(clear.type, 'move');
   assert.deepEqual(board, before);
+});
+
+test('move features mark a stranded tray piece and can skip the deeper search', () => {
+  const board = createBoard(3);
+  board[1][0] = '#fff';
+  board[1][1] = '#fff';
+  board[2][0] = '#fff';
+  board[2][1] = '#fff';
+  const pieces = [{ shape: [[1]] }, { shape: [[1, 1, 1]] }];
+  const moves = listMoves(board, pieces);
+  const blocking = moves.find((move) => move.pieceIndex === 0 && move.x === 2 && move.y === 0);
+  assert.equal(blocking.rest1, -1);
+  assert.equal(typeof blocking.rest2, 'number');
+  const shallow = listMoves(board, pieces, { lookahead: 1 });
+  assert.equal(shallow.find((move) => move.pieceIndex === 0 && move.x === 2 && move.y === 0).rest2, null);
+  const open = createBoard(3);
+  const room = listMoves(open, pieces).find((move) => move.pieceIndex === 0 && move.x === 0 && move.y === 0);
+  assert.ok(room.rest1 >= 0);
 });
 
 test('game over is the match phase or the results screen, not an empty tray by itself', () => {

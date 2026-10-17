@@ -75,7 +75,7 @@ npx playwright install chromium
 npm run sim
 ```
 
-That runs casual, skilled, quitter, and ad-averse personas against the shipped pacing file and `sim/variants/quiet-ads.json`, using the same seeds for both. They leave from board frustration, boredom, ads (ad-averse), or a finished match. A high safety cap is recorded as an anomaly, not a quit. It writes `sim/out/results.json` and `sim/out/summary.md`, including a quit reason for each session.
+That runs casual, skilled, quitter, and ad-averse personas against the shipped pacing file and `sim/variants/quiet-ads.json`, using the same seeds for both. Their default placement is the calibrated human policy in `studio-core/sim/calibration/human.json`: visible-tray lookahead, a preference for full lines and nearby drops, and a small chance of a top-move blunder. `placement: "legacy"` in a persona file selects the older skill roll. They leave from board frustration, boredom, ads (ad-averse), or a finished match. A high safety cap is recorded as an anomaly, not a quit. It writes `sim/out/results.json` and `sim/out/summary.md`, including a quit reason for each session.
 
 The adapter contract and the steps for another game are in `studio-core/sim/README.md`. GitHub Actions workflow `sim` runs the same command on pull requests and `workflow_dispatch`, uploads those two files, and posts the markdown on the job summary.
 
