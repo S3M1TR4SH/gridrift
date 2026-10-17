@@ -2,7 +2,7 @@
   "ads": {
     "personalized": false,
     "interstitial": {
-      "enabled": true,
+      "enabled": false,
       "breaks": ["between_rounds", "game_over"],
       "minSecondsBetween": 120,
       "intervalArms": [90, 120, 180],
@@ -12,7 +12,7 @@
       "controlSeparationPx": 96
     },
     "rewarded": {
-      "enabled": true,
+      "enabled": false,
       "optInOnly": true,
       "placements": ["continue", "hint", "reroll", "double_score"],
       "maxPerSession": 3,

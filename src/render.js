@@ -81,6 +81,8 @@ export function drawScene(ctx, scene) {
   ctx.save();
   ctx.translate(fx.shakeX || 0, fx.shakeY || 0);
   ctx.clearRect(-16, -16, layout.canvasWidth + 32, layout.canvasHeight + 32);
+  ctx.fillStyle = '#10141d';
+  ctx.fillRect(0, 0, layout.canvasWidth, layout.canvasHeight);
   ctx.fillStyle = '#121722';
   roundRect(ctx, 0, 0, layout.boardSize, layout.boardSize, 12);
   ctx.fill();

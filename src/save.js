@@ -90,6 +90,7 @@ function sanitizeRun(run) {
     targetClears: whole(run.targetClears) || 4,
     levelIndex: whole(run.levelIndex),
     continueUses: whole(run.continueUses),
+    continueClosed: run.continueClosed === true,
     hintsUsed: whole(run.hintsUsed) > 0 ? 1 : 0,
     rerollsUsed: whole(run.rerollsUsed) > 0 ? 1 : 0,
     doublesUsed: whole(run.doublesUsed) > 0 ? 1 : 0,

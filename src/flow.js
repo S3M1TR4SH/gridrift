@@ -7,14 +7,55 @@ export function shouldIgnoreInput(now, until) {
   return now < until;
 }
 
-export function canOfferContinue(uses, rewardedAllowed) {
-  return Boolean(rewardedAllowed) && uses < LIMITS.rewardedEffects.maxContinueUsesPerMatch;
+export const HINT_MIN_MOVES = 15;
+
+export function canOfferContinue(uses, rewardedAllowed, declined = false) {
+  return Boolean(rewardedAllowed) && !declined && uses < LIMITS.rewardedEffects.maxContinueUsesPerMatch;
 }
 
-export function canOfferHint({ elapsedMs = 0, stuck = false, hintsUsed = 0, rewardedAllowed = false } = {}) {
+export function continueRewardLabel(rows = 3) {
+  return `Watch ad: clear ${rowsForContinue(rows)} rows`;
+}
+
+export function canOfferHint({
+  elapsedMs = 0,
+  stuck = false,
+  hintsUsed = 0,
+  rewardedAllowed = false,
+  moves = 0,
+  minMoves = HINT_MIN_MOVES
+} = {}) {
   if (!rewardedAllowed || hintsUsed >= 1) return false;
+  const floor = Number.isFinite(Number(minMoves)) ? Number(minMoves) : HINT_MIN_MOVES;
+  if ((Number(moves) || 0) < floor) return false;
   if (stuck) return true;
   return elapsedMs >= HINT_MIN_PLAY_MS;
+}
+
+export function bootScreen() {
+  return 'play';
+}
+
+export function agePrompt(consent) {
+  if (consent) return null;
+  return {
+    blocking: false,
+    body: 'Under 13: no ads and no stats. 13 or older can keep optional stats on this device.',
+    actions: [
+      { id: 'age_under', label: "I'm under 13" },
+      { id: 'age_13', label: "I'm 13 or older" },
+      { id: 'analytics_yes', label: '13+ and keep stats' }
+    ]
+  };
+}
+
+export function welcomeCopy(model = {}) {
+  const levelName = model.levelName || 'Level';
+  const clears = model.clears ?? 0;
+  const goal = model.clearsGoal ?? 4;
+  const best = model.bestScore ?? 0;
+  const streak = model.streak ?? 0;
+  return `${levelName}: ${clears}/${goal} clears. Best ${best}. Streak ${streak}.`;
 }
 
 export function canOfferReroll({ stuck = false, rerollsUsed = 0, rewardedAllowed = false } = {}) {
@@ -93,10 +134,10 @@ export function viewModel(model) {
     return card({
       screen: 'welcome_back',
       title: 'Welcome back',
-      body: `Best score ${model.bestScore ?? 0}. Streak ${model.streak ?? 0}. Continue your run or start fresh.`,
+      body: welcomeCopy(model),
       actions: [
         { id: 'new_game', label: 'New game', slot: 'upper', primary: false },
-        { id: 'resume', label: 'Continue run', slot: 'lower', primary: true }
+        { id: 'resume', label: 'Continue level', slot: 'lower', primary: true }
       ]
     });
   }
@@ -123,44 +164,58 @@ export function viewModel(model) {
     });
   }
   if (model.screen === 'game_over') {
-    const actions = [{ id: 'restart', label: 'Restart', slot: 'lower', primary: true }];
-    if (model.doubleScore) {
-      actions.unshift({ id: 'offer_double', label: 'Double score', slot: 'upper', primary: false });
-    }
+    const actions = [];
     if (model.rewarded) {
-      actions.unshift({ id: 'offer_continue', label: 'Continue', slot: 'upper', primary: false });
+      actions.push({
+        id: 'offer_continue',
+        label: continueRewardLabel(model.continueRows ?? 3),
+        slot: 'lower',
+        primary: false
+      });
     }
+    if (model.doubleScore) {
+      actions.push({ id: 'offer_double', label: 'Double score', slot: 'lower', primary: false });
+    }
+    actions.push({ id: 'restart', label: 'Restart', slot: 'lower', primary: true });
     return card({
       screen: 'game_over',
       title: 'No moves left',
       body: `Score ${score}. Best streak ${best}. Restart is always available.`,
-      separated: Boolean(model.rewarded),
+      separated: false,
       actions
     });
   }
   if (model.screen === 'rewarded_confirm') {
-    const label = REWARD_LABELS[model.kind] || REWARD_LABELS.continue;
+    const reward = model.kind === 'continue' || !model.kind
+      ? continueRewardLabel(model.continueRows ?? 3)
+      : null;
+    const label = reward || REWARD_LABELS[model.kind] || REWARD_LABELS.continue;
     return card({
       screen: 'rewarded_confirm',
       title: 'Optional reward',
-      body: `Watch a placeholder ad for ${label}? You can decline.`,
+      body: reward ? `${reward}. You can decline.` : `Watch a placeholder ad for ${label}? You can decline.`,
       separated: true,
       actions: [
-        { id: 'decline', label: 'No thanks', slot: 'upper', primary: true },
-        { id: 'watch', label: 'Watch placeholder', slot: 'lower', primary: false }
+        { id: 'decline', label: 'No thanks', slot: 'lower', primary: true },
+        { id: 'watch', label: reward || 'Watch placeholder', slot: 'upper', primary: false }
       ]
     });
   }
   if (model.screen === 'rewarded_play') {
+    const reward = model.kind === 'continue' || !model.kind
+      ? continueRewardLabel(model.continueRows ?? 3)
+      : null;
     return card({
       screen: 'rewarded_play',
-      title: 'Rewarded placeholder',
-      body: 'This stand-in does not load an ad network. Grant the reward when you are ready.',
+      title: reward || 'Rewarded placeholder',
+      body: reward
+        ? `${reward}. This stand-in does not load an ad network.`
+        : 'This stand-in does not load an ad network. Grant the reward when you are ready.',
       adSlot: true,
       separated: true,
       actions: [
-        { id: 'decline', label: 'Cancel', slot: 'upper', primary: false },
-        { id: 'grant_reward', label: 'Grant reward', slot: 'lower', primary: true }
+        { id: 'decline', label: 'Cancel', slot: 'lower', primary: false },
+        { id: 'grant_reward', label: reward || 'Grant reward', slot: 'upper', primary: true }
       ]
     });
   }

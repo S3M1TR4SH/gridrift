@@ -28,6 +28,33 @@ export function scriptedBoards() {
   ];
 }
 
+export function coachMarks(clearsGoal = 4) {
+  const goal = Math.max(1, Math.floor(Number(clearsGoal) || 4));
+  return [
+    { target: 'tray', text: 'Drag a block onto the grid' },
+    { target: 'board', text: 'Fill a row or column to clear it' },
+    { target: 'clearsGoal', text: `Clear ${goal} lines to finish the level` }
+  ];
+}
+
+export function openingBoard(grid = 6) {
+  const board = createBoard(grid);
+  for (let x = 0; x < grid - 3; x += 1) board[0][x] = '#8b95a8';
+  for (let y = 1; y < grid; y += 1) {
+    const hole = (y + 1) % grid;
+    for (let x = 0; x < grid; x += 1) {
+      if (x !== hole) board[y][x] = '#8b95a8';
+    }
+  }
+  const colors = ['#3d8bfd', '#5ee1b4', '#ffb020'];
+  const pieces = colors.map((color) => ({
+    shapeName: 'line3',
+    color,
+    tileId: 'tile.blue'
+  }));
+  return { board, pieces, prompt: 'Fill this line' };
+}
+
 export function shouldSkipOnboarding(progress = {}) {
   if (progress.tutorialSeen === true) return true;
   if ((progress.sessions || 0) > 0) return true;

@@ -40,7 +40,13 @@ test('shipped retention config matches the spec blocks for items 1 through 5', (
   assert.equal(retention.feedback.respectReducedMotion, true);
   assert.equal(retention.onboarding.scriptedBoards, 2);
   assert.equal(retention.onboarding.guaranteeFirstClearWithinMoves, 3);
-  assert.equal(retention.onboarding.textMaxWords, 6);
+  assert.equal(retention.onboarding.textMaxWords, 8);
+  assert.equal(retention.onboarding.prefilledFirstBoard, true);
+  assert.equal(retention.onboarding.dismissOnAction, true);
+  assert.equal(retention.persistence.persistLevel.enabled, true);
+  assert.equal(retention.feedback.streakFx.minStreak, 2);
+  assert.equal(retention.tray.fixedSlots, true);
+  assert.equal(retention.layout.mobilePortrait.boardAnchor, 'upper');
   assert.equal(retention.onboarding.skipForReturningPlayers, true);
   assert.equal(retention.onboarding.firstSessionNoInterstitials, true);
   assert.equal(retention.onboarding.dragOffsetPx, 60);

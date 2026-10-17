@@ -22,6 +22,7 @@ import { createAudio } from './audio.js';
 import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';
 import {
   INPUT_GUARD_MS,
+  agePrompt,
   canOfferContinue,
   canOfferDouble,
   canOfferHint,
@@ -30,13 +31,14 @@ import {
   planRoundAdvance,
   rowsForContinue,
   shouldIgnoreInput,
-  viewModel
+  viewModel,
+  welcomeCopy
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
 import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { canPlace, createMatch, isStuck } from './logic.js';
-import { scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
+import { coachMarks, openingBoard, scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
 import { beginRun, milestoneHit, noteLoss, noteSuccess, shouldShowWelcome, STREAK_RESET_COPY, bandShapes } from './retention.js';
 import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
 import { drawScene } from './render.js';
@@ -98,7 +100,7 @@ function start() {
   void tracker.sync();
   const pacer = createPacer({
     pacing,
-    isChild: () => Boolean(consent?.isChild),
+    isChild: () => !consent || Boolean(consent.isChild),
     sessionNumber: (progress.sessions || 0) + 1
   });
   const ads = createGuardedAds({ pacer });
@@ -130,6 +132,7 @@ function start() {
   });
   let levelIndex = progress.run?.levelIndex || 0;
   let continueUses = progress.run?.continueUses || 0;
+  let continueClosed = progress.run?.continueClosed === true;
   let hintsUsed = progress.run?.hintsUsed || 0;
   let rerollsUsed = progress.run?.rerollsUsed || 0;
   let doublesUsed = progress.run?.doublesUsed || 0;
@@ -141,6 +144,8 @@ function start() {
   let lossNoted = progress.run?.phase === 'game_over';
   let onboardingIndex = null;
   let onboardingStarted = 0;
+  let coachStep = shouldSkipOnboarding(progress) ? null : 0;
+  let welcomeOpen = false;
   let moves = 0;
   let dailyNote = '';
   let lastTick = performance.now();
@@ -221,12 +226,22 @@ function start() {
     lossNoted = false;
   }
 
+  function freshOpening() {
+    const opening = openingBoard(tuning.grid);
+    return makeMatch({
+      board: opening.board,
+      pieces: opening.pieces,
+      phase: 'playing',
+      targetClears: level().targetClears
+    });
+  }
+
   let match;
   if (progress.run) match = makeMatch(progress.run);
-  else if (retention.onboarding.enabled && !shouldSkipOnboarding(progress)) {
-    onboardingIndex = 0;
+  else if (retention.onboarding.enabled && coachStep !== null) {
     onboardingStarted = performance.now();
-    match = scriptedMatch(0);
+    match = freshOpening();
+    match.showHint();
   } else match = makeMatch();
 
   function trackRunStart() {
@@ -237,8 +252,6 @@ function start() {
   }
 
   function screen() {
-    if (!consent) return 'age_gate';
-    if (consent.needsAnalyticsPrompt) return 'analytics_consent';
     if (overlay?.screen) return overlay.screen;
     return 'play';
   }
@@ -259,8 +272,8 @@ function start() {
       streak: daily.streak || 0
     });
     tracker.track('round_start', { round: level().id });
-    if (onboardingIndex === null) trackRunStart();
-    else tracker.track('onboarding_step', { step: onboardingIndex + 1 });
+    if (coachStep === null) trackRunStart();
+    else tracker.track('onboarding_step', { step: coachStep + 1 });
     persist();
   }
 
@@ -304,6 +317,7 @@ function start() {
         targetClears: state.targetClears,
         levelIndex,
         continueUses,
+        continueClosed,
         hintsUsed,
         rerollsUsed,
         doublesUsed,
@@ -318,14 +332,13 @@ function start() {
 
   function openEntry() {
     const away = retention.persistence.welcomeBack;
-    if (away.enabled && shouldShowWelcome({
+    welcomeOpen = Boolean(away.enabled && shouldShowWelcome({
       run: progress.run,
       lastSeen: progress.lastSeen,
       now: Date.now(),
       minAwayMinutes: away.minAwayMinutes
-    })) {
-      overlay = { screen: 'welcome_back' };
-    } else overlay = null;
+    }));
+    if (!welcomeOpen) overlay = null;
     publishOverlay(true);
   }
 
@@ -420,6 +433,14 @@ function start() {
     }
     tracker.track('round_complete', { score: match.state.score, round: level().id });
     audio.play('sfx.win');
+    feedback.levelComplete({
+      cell: layout.cell,
+      grid: tuning.grid,
+      color: '#5ee1b4',
+      popupX: layout.boardSize / 2,
+      popupY: layout.boardSize / 2,
+      streak: match.state.streak
+    });
     persist();
     show({ screen: 'round_complete', doubleScore: doubleReady() });
   }
@@ -441,7 +462,7 @@ function start() {
     });
     audio.play('sfx.game_over');
     const rewardedAllowed = ads.canOfferRewarded('continue');
-    const continueOffered = canOfferContinue(continueUses, rewardedAllowed);
+    const continueOffered = canOfferContinue(continueUses, rewardedAllowed, continueClosed);
     const plan = planBreak({
       type: 'game_over',
       interstitialAllowed: continueOffered ? false : interstitialAllowed('game_over'),
@@ -477,6 +498,7 @@ function start() {
 
   function resetRunCounters() {
     continueUses = 0;
+    continueClosed = false;
     hintsUsed = 0;
     rerollsUsed = 0;
     doublesUsed = 0;
@@ -492,6 +514,8 @@ function start() {
       elapsedMs: playMs,
       stuck: sawStuck,
       hintsUsed,
+      moves,
+      minMoves: tuning.hintMinMoves ?? 15,
       rewardedAllowed: ads.canOfferRewarded('hint')
     });
   }
@@ -510,6 +534,8 @@ function start() {
   function restart() {
     levelIndex = 0;
     mode = 'arcade';
+    welcomeOpen = false;
+    coachStep = null;
     resetRunCounters();
     rewardKind = null;
     startEasyRun();
@@ -554,7 +580,7 @@ function start() {
       else {
         show({
           screen: 'game_over',
-          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true, continueClosed),
           doubleScore: false
         });
       }
@@ -574,7 +600,7 @@ function start() {
     if (match.state.phase === 'game_over') {
       show({
         screen: 'game_over',
-        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true, continueClosed),
         doubleScore: doubleReady()
       });
       return;
@@ -602,29 +628,27 @@ function start() {
     }
     if (id === 'age_under') {
       consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
       tap();
       void tracker.sync();
-      show({ screen: 'kid_mode' });
       return;
     }
     if (id === 'age_13') {
       consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
+      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
       tap();
-      overlay = null;
-      if (consent.needsAnalyticsPrompt) {
-        publishOverlay(true);
-        return;
-      }
-      openEntry();
+      void tracker.sync();
       return;
     }
     if (id === 'analytics_yes' || id === 'analytics_no') {
       const choice = id === 'analytics_yes' ? 'granted' : 'denied';
+      if (!consent || consent.isChild) {
+        consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
+      }
       consent = consentStore.save(applyAnalyticsChoice(consent, choice));
       tap();
       void tracker.sync();
       tracker.track('consent_updated', { granted: choice === 'granted' });
-      openEntry();
       return;
     }
     if (id === 'analytics_revoke') {
@@ -639,6 +663,7 @@ function start() {
       return;
     }
     if (id === 'resume') {
+      welcomeOpen = false;
       resumeRun();
       return;
     }
@@ -729,7 +754,7 @@ function start() {
             : 'continue';
       if (kind === 'hint' && !hintReady()) return;
       if (kind === 'reroll' && !rerollReady()) return;
-      if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'))) return;
+      if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'), continueClosed)) return;
       if (kind === 'double_score' && !canOfferDouble({ doublesUsed, rewardedAllowed: ads.canOfferRewarded('double_score') })) return;
       if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
@@ -739,9 +764,16 @@ function start() {
       return;
     }
     if (id === 'decline') {
-      tracker.track('rewarded_declined', { kind: rewardKind || 'continue' });
+      const kind = rewardKind || 'continue';
+      tracker.track('rewarded_declined', { kind });
       tap();
       rewardKind = null;
+      if (kind === 'continue') {
+        continueClosed = true;
+        show({ screen: 'game_over', rewarded: false, doubleScore: doubleReady() });
+        persist();
+        return;
+      }
       if (match.state.phase === 'round_complete') {
         show({ screen: 'round_complete', doubleScore: doubleReady() });
         return;
@@ -749,7 +781,7 @@ function start() {
       if (match.state.phase === 'game_over') {
         show({
           screen: 'game_over',
-          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          rewarded: false,
           doubleScore: doubleReady()
         });
         return;
@@ -784,7 +816,11 @@ function start() {
       bestScore: Math.max(progress.bestScore || 0, state.score),
       streak: daily.streak || 0,
       bestStreak: state.bestStreak,
-      roundName: level().name
+      roundName: level().name,
+      levelName: level().name,
+      clears: state.roundClears,
+      clearsGoal: state.targetClears,
+      continueRows: tuning.continueClears
     });
     const key = JSON.stringify(view);
     if (!force && key === overlayKey) return;
@@ -793,17 +829,31 @@ function start() {
     if (name === 'play') noteSession();
   }
 
+  function chromePlayHeight() {
+    const header = document.querySelector('header');
+    const app = document.querySelector('#app');
+    const headerH = header?.getBoundingClientRect().height || 0;
+    const appStyle = app ? getComputedStyle(app) : null;
+    const padY = appStyle
+      ? (parseFloat(appStyle.paddingTop) || 0) + (parseFloat(appStyle.paddingBottom) || 0)
+      : 0;
+    const gap = appStyle ? (parseFloat(appStyle.rowGap || appStyle.gap) || 0) : 0;
+    return Math.max(280, Math.floor(window.innerHeight - headerH - padY - gap));
+  }
+
   function measure() {
+    const playHeight = chromePlayHeight();
     layout = computeLayout({
       width: window.innerWidth,
       height: window.innerHeight,
-      grid: tuning.grid
+      grid: tuning.grid,
+      playHeight
     });
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(layout.canvasWidth * dpr);
     canvas.height = Math.round(layout.canvasHeight * dpr);
-    canvas.style.width = `${layout.canvasWidth}px`;
-    canvas.style.height = `${layout.canvasHeight}px`;
+    canvas.style.width = '100%';
+    canvas.style.height = `${playHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -890,6 +940,19 @@ function start() {
       });
       if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
     }
+    if (coachStep !== null) {
+      coachStep += 1;
+      if (coachStep >= coachMarks(match.state.targetClears).length) {
+        const elapsed = onboardingStarted ? Math.round(performance.now() - onboardingStarted) : 0;
+        coachStep = null;
+        progress = { ...progress, tutorialSeen: true };
+        tracker.track('onboarding_complete', { ms: elapsed });
+        trackRunStart();
+      } else {
+        tracker.track('onboarding_step', { step: coachStep + 1 });
+      }
+    }
+    welcomeOpen = false;
     if (onboardingIndex !== null && result.lines > 0) {
       advanceOnboarding();
       return result;
@@ -1016,8 +1079,8 @@ function start() {
       round: level().name,
       clears: state.roundClears,
       target: state.targetClears,
-      goal: onboardingIndex !== null
-        ? scriptedBoards()[onboardingIndex].prompt
+      goal: coachStep !== null
+        ? coachMarks(state.targetClears)[Math.min(coachStep, coachMarks(state.targetClears).length - 1)].text
         : mode === 'daily'
           ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}${dailyNote ? ` · ${dailyNote}` : ''}`
           : `Clear ${state.targetClears} lines`,
@@ -1035,8 +1098,37 @@ function start() {
       stats: screen() === 'play' && Boolean(consent && !consent.isChild && consent.analyticsAllowed),
       muted: audio.muted
     });
+    paintBanner();
     publishOverlay(false);
+    const headerH = document.querySelector('header')?.offsetHeight || 0;
+    if (headerH !== lastHeaderH) {
+      lastHeaderH = headerH;
+      measure();
+    }
     requestAnimationFrame(frame);
+  }
+
+  let lastHeaderH = 0;
+
+  function paintBanner() {
+    const state = match.state;
+    const prompt = agePrompt(consent);
+    if (prompt) ui.setBanner(prompt);
+    else if (welcomeOpen) {
+      ui.setBanner({
+        body: welcomeCopy({
+          levelName: level().name,
+          clears: state.roundClears,
+          clearsGoal: state.targetClears,
+          bestScore: Math.max(progress.bestScore || 0, state.score),
+          streak: daily.streak || 0
+        }),
+        actions: [
+          { id: 'new_game', label: 'New game', primary: false },
+          { id: 'resume', label: 'Continue level', primary: true }
+        ]
+      });
+    } else ui.setBanner(null);
   }
 
   attachSimBridge({
@@ -1052,14 +1144,26 @@ function start() {
     getRewardKind: () => overlay?.kind || rewardKind || null,
     getBreak: () => overlay?.after || null,
     getRound: () => level().name,
-    canHint: () => screen() === 'play' && !consent?.isChild && pacer.canOfferRewarded('hint'),
+    canHint: () => hintReady(),
     performUi: (id) => onAction(id),
     performMove: (index, x, y) => commitPlace(index, x, y)
   });
 
+  openEntry();
+  paintBanner();
   measure();
-  if (consent && !consent.needsAnalyticsPrompt) openEntry();
-  else publishOverlay(true);
+  lastHeaderH = document.querySelector('header')?.offsetHeight || 0;
+  if (typeof ResizeObserver === 'function') {
+    const header = document.querySelector('header');
+    if (header) {
+      new ResizeObserver(() => {
+        const next = header.offsetHeight;
+        if (next === lastHeaderH) return;
+        lastHeaderH = next;
+        measure();
+      }).observe(header);
+    }
+  }
   requestAnimationFrame(frame);
 }
 

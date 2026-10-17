@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LIMITS } from '../studio-core/guardrails/limits.js';
 import {
+  HINT_MIN_MOVES,
   HINT_MIN_PLAY_MS,
   INPUT_GUARD_MS,
   canOfferContinue,
@@ -103,16 +104,25 @@ test('drag snaps to the grid and a tap selects', () => {
 test('game over offers an opt-in continue once and always offers restart', () => {
   const over = viewModel({ screen: 'game_over', rewarded: true, score: 40, bestStreak: 3 });
   assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'restart']);
-  assert.equal(over.actions.find((action) => action.id === 'offer_continue').label, 'Continue');
+  const reward = over.actions.find((action) => action.id === 'offer_continue');
+  assert.match(reward.label, /Watch ad: clear 3 rows/);
+  assert.equal(reward.primary, false);
+  assert.equal(over.actions.find((action) => action.id === 'restart').primary, true);
+  assert.equal(over.separated, false);
   assert.equal(over.actions.find((action) => action.id === 'restart').label, 'Restart');
   const spent = viewModel({ screen: 'game_over', rewarded: false, score: 40, bestStreak: 3 });
   assert.deepEqual(spent.actions.map((action) => action.id), ['restart']);
   assert.equal(canOfferContinue(0, true), true);
   assert.equal(canOfferContinue(1, true), false);
   assert.equal(canOfferContinue(0, false), false);
-  const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'continue' });
+  const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'continue', continueRows: 3 });
+  assert.match(confirm.body, /Watch ad: clear 3 rows/);
+  assert.match(confirm.actions.find((action) => action.id === 'watch').label, /clear 3 rows/);
+  const playing = viewModel({ screen: 'rewarded_play', kind: 'continue', continueRows: 3 });
+  assert.match(playing.body, /Watch ad: clear 3 rows/);
   assert.equal(confirm.actions.some((action) => action.id === 'decline'), true);
   assert.equal(confirm.actions.some((action) => action.id === 'watch'), true);
+  assert.equal(canOfferContinue(0, true, true), false);
 });
 
 test('reroll and double score are opt-in and once each', () => {
@@ -143,10 +153,13 @@ test('reroll and double score are opt-in and once each', () => {
   assert.ok(results.actions.some((action) => action.id === 'next_round'));
 });
 
-test('a rewarded hint waits two minutes unless the player is stuck, and only once', () => {
+test('a rewarded hint waits two minutes or a stuck board, and never before step 15', () => {
+  assert.equal(HINT_MIN_MOVES, 15);
   assert.equal(HINT_MIN_PLAY_MS, 120_000);
-  const open = { elapsedMs: 0, stuck: false, hintsUsed: 0, rewardedAllowed: true };
+  const open = { elapsedMs: 0, stuck: false, hintsUsed: 0, rewardedAllowed: true, moves: 15 };
   assert.equal(canOfferHint(open), false);
+  assert.equal(canOfferHint({ ...open, moves: 14, stuck: true }), false);
+  assert.equal(canOfferHint({ ...open, moves: 0, elapsedMs: HINT_MIN_PLAY_MS }), false);
   assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS - 1 }), false);
   assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS }), true);
   assert.equal(canOfferHint({ ...open, stuck: true }), true);
@@ -157,10 +170,19 @@ test('a rewarded hint waits two minutes unless the player is stuck, and only onc
 });
 
 test('welcome back shows the best score and the day streak', () => {
-  const welcome = viewModel({ screen: 'welcome_back', bestScore: 15, streak: 4 });
+  const welcome = viewModel({
+    screen: 'welcome_back',
+    bestScore: 15,
+    streak: 4,
+    levelName: 'Round 1',
+    clears: 1,
+    clearsGoal: 4
+  });
   assert.equal(welcome.title, 'Welcome back');
-  assert.match(welcome.body, /Best score 15/);
+  assert.match(welcome.body, /Round 1: 1\/4 clears/);
+  assert.match(welcome.body, /Best 15/);
   assert.match(welcome.body, /Streak 4/);
+  assert.equal(welcome.actions.find((action) => action.id === 'resume').label, 'Continue level');
   assert.equal(welcome.actions.find((action) => action.id === 'resume').slot, 'lower');
   assert.equal(welcome.actions.find((action) => action.id === 'new_game').slot, 'upper');
   assert.equal(welcome.separated, false);

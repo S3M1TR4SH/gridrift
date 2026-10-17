@@ -177,6 +177,8 @@ export function createFeedback({
       cols,
       color: event.color || '#ffffff',
       points: event.points || 0,
+      popupText: event.popupText || '',
+      streak: event.streak || 0,
       popupX: event.popupX || 0,
       popupY: event.popupY || 0,
       particles,
@@ -208,6 +210,16 @@ export function createFeedback({
       index: event.index
     });
     return { sounds: [juice.sounds.invalid] };
+  }
+
+  function levelComplete(event = {}) {
+    return clear({
+      ...event,
+      points: event.points || 0,
+      popupText: 'Level clear',
+      rows: event.rows?.length ? event.rows : [0],
+      cols: event.cols || []
+    });
   }
 
   function sample(time) {
@@ -246,12 +258,21 @@ export function createFeedback({
         if (popupLeft > 0) {
           const span = Math.max(1, effect.popupUntil - effect.born);
           popups.push({
-            text: `+${effect.points}`,
+            text: effect.popupText || `+${effect.points}`,
             x: effect.popupX,
             y: effect.popupY - (1 - popupLeft / span) * 28,
             alpha: Math.min(1, popupLeft / span),
             level: effect.level
           });
+          if ((effect.streak || 0) >= 2 && !effect.popupText) {
+            popups.push({
+              text: `Streak x${effect.streak}`,
+              x: effect.popupX,
+              y: effect.popupY - 36 - (1 - popupLeft / span) * 28,
+              alpha: Math.min(1, popupLeft / span),
+              level: effect.level
+            });
+          }
         }
         for (const particle of effect.particles) {
           const age = time - particle.born;
@@ -312,6 +333,7 @@ export function createFeedback({
     },
     clear,
     invalid,
+    levelComplete,
     sample
   };
 }

@@ -159,3 +159,72 @@ Rank = (expected D1/D7 effect × confidence) ÷ effort. Items that fix observed 
 - No published block-puzzle-specific A/B lifts were found for onboarding, streaks, or notifications. Every cited lift comes from Duolingo, a solitaire title, or a cross-app vendor study.
 - Block Blast and Woodoku mechanics come from third-party reviews and deconstructions, not developer sources.
 - Sources were checked by search snippet on 2026-10-16. Pages were not fully fetched.
+
+---
+
+## Playtest 9b0e0c9 evidence (2026-10-17 CT)
+Source: `/workspace/playtest/2026-10-17-9b0e0c9/human-pass.md` and screenshots 03-12. The human-feel gate **failed**: average 4.6/10 (needs at least 6), lowest score 2 (Return hook). Observations marked (XD) come from XD S1M's review of the screenshots.
+
+**Ranking decision:** the existing order holds. The playtester's top 3 match items #1 (persist/welcome-back, Return hook score 2), #2 (clear payoff, Juice score 3) and #3 (onboarding, clarity score 4) exactly. The pass adds one **ship blocker** (P0), which is not a retention item but must be fixed before any live ad test.
+
+### P0 (policy). Game-over continue offer: disclose the reward and make Restart primary. Effort: S
+Evidence:
+- (08, XD) The "No moves left" modal shows **Continue** and **Restart** as identical blue buttons with a large empty gap between them. Continue doesn't say what it costs or what it gives.
+- (09) The rewarded placeholder shows "Cancel" and "Grant reward" with no reward described.
+- (10) The reward turned out to be rows wiped, which was never disclosed beforehand.
+
+AdMob requires the player to opt in after being told the action and the reward (https://support.google.com/admob/answer/7313578; see engagement-ad-design.md §1).
+
+Fix:
+- Label the button "Watch ad: clear 3 rows" (or whatever the fixed reward is), with an ad icon.
+- Make Restart the filled primary button and Continue the secondary/outline button. Keep "No thanks" visible.
+- Remove the gap.
+- Show the same reward text on the ad intro screen.
+```json
+"sessionHooks.revive": { "maxPerRun": 1, "declineButtonProminent": true,
+  "label": "Watch ad: clear {n} rows", "reward": { "type": "clearRows", "n": 3, "deterministic": true },
+  "primaryAction": "restart", "reviveButtonStyle": "secondary", "showAdIcon": true, "introRepeatsReward": true }
+```
+
+### #1 update: build on the existing per-level clear goal
+(b, XD) The header already shows Score, Streak, the level name (Shallow drift → Crosscurrent) and Clears x/4 or x/6, and 07 shows a level-complete card. A level ladder already exists, so persist it instead of inventing a new progression. (11) A reload still resets everything.
+```json
+"persistence": { "saveRunOnEveryPlacement": true, "storage": "local", "trackBestScore": true,
+  "persistLevel": { "enabled": true, "fields": ["levelId","clears","clearsGoal","score","streak","board","tray"] },
+  "welcomeBack": { "enabled": true, "minAwayMinutes": 30, "showBestScore": true, "showStreak": true,
+    "copy": "{levelName}: {clears}/{clearsGoal} clears. Best {best}", "cta": "Continue level" } },
+"progression": { "source": "existingLevelLadder", "xp": { "perLevelComplete": 20 }, "levelCompleteCard": { "fx": true, "showNextLevelGoal": true } }
+```
+
+### #2 update: clear payoff
+(04b, 07) A row clear and the level-complete card are plain. Also: invalid drops snap back silently (human fix #4), and the tray shifts left after each placement (fix #5).
+```json
+"feedback": { "clearFx": ["flash","particles","scorePopup"], "streakFx": { "minStreak": 2, "popupText": "Streak x{n}" },
+  "levelCompleteFx": ["confetti","goalCheck"], "invalidDropFx": ["shake","softSound"], "maxFxMs": 400 },
+"tray": { "fixedSlots": true }
+```
+
+### #3 update: onboarding
+(c, XD) The first board deals trivial straight pieces onto an empty grid with no instruction text (12). "Clears x/y" is never explained (human fix #3). Keep the easy first deal, since it guarantees an early clear, but add guidance.
+```json
+"onboarding": { "enabled": true, "scriptedBoards": 2, "prefilledFirstBoard": true, "guaranteeFirstClearWithinMoves": 3,
+  "coachMarks": [ { "target": "tray", "text": "Drag a block onto the grid" },
+                  { "target": "board", "text": "Fill a row or column to clear it" },
+                  { "target": "clearsGoal", "text": "Clear {clearsGoal} lines to finish the level" } ],
+  "textMaxWords": 8, "dismissOnAction": true, "skipForReturningPlayers": true }
+```
+
+### Mobile layout (supports #1 and #3). Effort: S
+(d, XD; 12, human fix #6) At 390px portrait there's a large empty band above the board, the cells are about 37px, and the tray sits low, which is fine for thumb reach. Move the board up and use the top band for the best score and the level goal. This makes the return hook and the goal visible without adding modals.
+```json
+"layout.mobilePortrait": { "boardAnchor": "upper", "topPanel": { "enabled": true, "show": ["bestScore","levelName","clearsProgressBar"] },
+  "trayAnchor": "bottom", "minCellPx": 40, "hudMinFontPx": 14, "dragOffsetPx": 60 }
+```
+
+### Seen working (keep)
+- Drag input scored 8/10 for responsiveness.
+- Game-over copy is kind ("Restart is always available").
+- The continue offer is opt-in.
+
+### Not yet verified
+- A break ad and the continue re-offer loop the sim found. Re-test both after the P0 fix.

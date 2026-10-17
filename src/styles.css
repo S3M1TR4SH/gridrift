@@ -29,14 +29,15 @@ body {
 button, #app { font-family: inherit; }
 
 #app {
+  width: 100%;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   padding:
-    calc(8px + var(--safe-top))
+    calc(6px + var(--safe-top))
     0
-    calc(8px + var(--safe-bottom));
+    calc(6px + var(--safe-bottom));
 }
 
 header {
@@ -56,16 +57,16 @@ header h1 {
 .goal {
   flex-basis: 100%;
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.3;
 }
 
 .stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 8px 12px;
   color: #d7e0ec;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.3;
 }
 
@@ -103,9 +104,66 @@ header h1 {
 
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-left: auto;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 720px) {
+  html, body { overflow: hidden; }
+  #app {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    gap: 4px;
+    padding:
+      calc(4px + var(--safe-top))
+      env(safe-area-inset-right, 0px)
+      calc(4px + var(--safe-bottom))
+      env(safe-area-inset-left, 0px);
+  }
+  header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 8px;
+    align-items: center;
+  }
+  header h1 { font-size: 1rem; line-height: 1.1; }
+  .goal { grid-column: 1 / -1; line-height: 1.2; }
+  .stats {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px 10px;
+  }
+  .streak-meter { height: 4px; }
+  #streak-meter { grid-column: 1; }
+  #goal-meter { grid-column: 2; }
+  .header-actions {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
+  header button.quiet,
+  .banner button {
+    min-height: 32px;
+    font-size: 0.8rem;
+    padding: 0 8px;
+  }
+  .banner {
+    grid-column: 1 / -1;
+    padding: 4px 6px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .banner p {
+    flex: 1 1 140px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.2;
+  }
 }
 
 button {
@@ -137,16 +195,52 @@ button.quiet {
 
 main {
   flex: 1;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   min-height: 0;
+  width: 100%;
 }
 
 canvas {
   touch-action: none;
   background: transparent;
-  max-width: 100%;
+  width: 100%;
   height: auto;
+  display: block;
+}
+
+.banner {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.banner p {
+  margin: 0;
+  flex: 1 1 160px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.banner-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.banner button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
 }
 
 #overlay {
@@ -226,7 +320,36 @@ button:disabled {
 }
 
 @media (max-width: 420px) {
-  header h1 { font-size: 1.125rem; }
+  header h1 { font-size: 1rem; }
   .header-actions { width: 100%; margin-left: 0; }
-  .header-actions button { flex: 1; }
+}
+
+@media (max-width: 720px) {
+  .stats span { white-space: nowrap; }
+  .banner {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .banner p {
+    flex: none;
+    width: 100%;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .banner-actions { width: 100%; }
+  .banner button {
+    flex: 1 1 auto;
+    width: auto;
+    min-height: 32px;
+    min-width: 0;
+    padding: 0 8px;
+  }
 }

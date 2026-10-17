@@ -19,13 +19,18 @@ export function createUi(doc = document) {
   const goal = doc.querySelector('#goal');
   const meter = doc.querySelector('#streak-meter');
   const meterFill = doc.querySelector('#streak-fill');
+  const goalMeter = doc.querySelector('#goal-meter');
+  const goalFill = doc.querySelector('#goal-fill');
+  const banner = doc.querySelector('#banner');
   let onAction = () => {};
 
-  overlay.addEventListener('click', (event) => {
+  function onClick(event) {
     const button = event.target.closest('button[data-action]');
     if (!button || button.disabled) return;
     onAction(button.dataset.action);
-  });
+  }
+  overlay.addEventListener('click', onClick);
+  banner?.addEventListener('click', onClick);
   hint.addEventListener('click', () => {
     if (hint.disabled) return;
     onAction('offer_hint');
@@ -75,6 +80,13 @@ export function createUi(doc = document) {
         meter.setAttribute('aria-valuenow', String(hud.streak));
         meter.setAttribute('aria-valuemax', String(hud.meterMax || 6));
       }
+      if (goalMeter && goalFill) {
+        const target = Math.max(1, hud.target || 1);
+        const amount = Math.max(0, Math.min(1, (hud.clears || 0) / target));
+        goalFill.style.width = `${Math.round(amount * 100)}%`;
+        goalMeter.setAttribute('aria-valuenow', String(hud.clears || 0));
+        goalMeter.setAttribute('aria-valuemax', String(target));
+      }
       if (hud.hint === 'off') {
         hint.hidden = true;
       } else {
@@ -99,6 +111,26 @@ export function createUi(doc = document) {
       if (stats) stats.hidden = !hud.stats;
       mute.textContent = hud.muted ? 'Unmute' : 'Mute';
       mute.setAttribute('aria-pressed', hud.muted ? 'true' : 'false');
+    },
+    setBanner(model) {
+      if (!banner) return;
+      if (!model) {
+        banner.hidden = true;
+        banner.replaceChildren();
+        return;
+      }
+      banner.hidden = false;
+      banner.replaceChildren();
+      const copy = doc.createElement('p');
+      copy.textContent = model.body || '';
+      const row = doc.createElement('div');
+      row.className = 'banner-actions';
+      for (const action of model.actions || []) {
+        const node = button({ ...action, primary: action.primary === true });
+        if (!action.primary) node.className = 'secondary';
+        row.append(node);
+      }
+      banner.append(copy, row);
     },
     setOverlay(view) {
       if (!view || view.screen === 'play') {
