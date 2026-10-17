@@ -10,7 +10,7 @@ An adapter module exports `createAdapter({ root })`. `root` is the host working 
 
 | Method | Required | Role |
 | --- | --- | --- |
-| `start({ seed, variant, persona })` | yes | Open a fresh session. `variant` is `{ id, pacingPath }`. |
+| `start({ seed, variant, persona })` | yes | Open a fresh session. `variant` is `{ id, pacingPath, tuningPath? }`. Override the tuning URL only when `tuningPath` is set. |
 | `readState()` | yes | Return the state fields below. |
 | `listActions()` | yes | Return the actions the persona may take right now. |
 | `perform(action)` | yes | Run one action. Return `{ ok: true }` or `{ ok: false }`. |
@@ -116,3 +116,72 @@ Use the seed for the game's own RNG as well. A fixed clock time derived from the
 6. Add an `npm run sim` script and a GitHub Actions workflow on `ubuntu-latest`. Cache npm and the Playwright browser directory. Run on `pull_request` and `workflow_dispatch`. Upload `results.json` and `summary.md`, and append the markdown to `$GITHUB_STEP_SUMMARY`.
 
 `node --test` in this package covers the runner with an in-memory adapter. It does not launch a browser. The host's own tests should cover move listing and the variant files.
+
+## Analyze results
+
+`studio-core/sim/analyze/` reads a sim results file, builds a compact summary (comparison metrics only, not every session), and asks a local Ollama server for ranked config changes.
+
+```bash
+node studio-core/sim/analyze/cli.js \
+  --input sim/out/results.json \
+  --pacing config/pacing.json \
+  --tuning config/tuning.json \
+  --out sim/out/analysis \
+  --history sim/history/runs.jsonl
+```
+
+That writes `analysis.json` and `analysis.md`. The model reply must be JSON:
+
+```json
+{
+  "proposals": [
+    {
+      "id": "lower-cap",
+      "rank": 1,
+      "title": "Lower the interstitial cap",
+      "rationale": "The quiet variant kept more of the session.",
+      "config": "pacing",
+      "patch": { "ads": { "interstitial": { "maxPerSession": 1 } } },
+      "expectedEffect": "fewer ad moments"
+    }
+  ]
+}
+```
+
+`config` is `pacing` or `tuning`. `patch` is a deep partial of that file. Rank 1 is the preferred change.
+
+The client posts to `{OLLAMA_HOST}/api/chat` with `format: json`. Defaults:
+
+| Setting | Flag | Env | Default |
+| --- | --- | --- | --- |
+| Server | `--ollama-url` | `OLLAMA_HOST` | `http://localhost:11434` |
+| Model | `--model` | `OLLAMA_MODEL` | `qwen2.5-coder:3b` |
+| Fallback | `--fallback-model` | `OLLAMA_FALLBACK_MODEL` | `llama3.2:3b` |
+
+Flags win over env. If the first model responds 404, the client tries the fallback once. Pull a model before the first run (`ollama pull qwen2.5-coder:3b`). A response that is not the schema above is sent back once for repair. A second invalid response is rejected and nothing from it is applied.
+
+Each proposal that parses is merged onto a copy of the current pacing or tuning file and checked with `validateGameConfig`. Proposals that break a guardrail are dropped. The output lists them under rejected with the rule and message. Only passing proposals are accepted, and each accepted entry includes the patched config.
+
+`--resim --adapter sim/<game>-adapter.js` re-runs the session runner for each passing proposal, using the same seeds as the input file, and stores the metric delta as `estimate`. A resim error rejects that proposal. Leave the flag off unless a local browser run is worth the time.
+
+### History and trends
+
+Each analyze run appends one JSON line to the history file: timestamp, git SHA, model and config paths, the results summary, and the accepted and rejected proposals. The default path is `sim/history/runs.jsonl`. Those `*.jsonl` files are gitignored because they are local run logs. Copy one into the repo under another path and pass `--history` if a trend should be shared.
+
+```bash
+node studio-core/sim/analyze/cli.js trends --history sim/history --out sim/out/analysis/trends.md
+```
+
+Trends reads every `*.jsonl` in that directory and prints would-return, clears, ad moments, quit rate, and accept/reject counts in time order.
+
+### Optional Windows helper
+
+Analyze speaks to Ollama over HTTP. It does not call `C:\Studio\local-llm\ask.ps1`. On a machine that already has that helper, you can pipe the written markdown through it for a second opinion:
+
+```powershell
+Get-Content sim\out\analysis\analysis.md | & C:\Studio\local-llm\ask.ps1
+```
+
+### CI
+
+Unit tests mock the HTTP client and never open a server. Do not run analyze in CI. The sim workflow does not call it.

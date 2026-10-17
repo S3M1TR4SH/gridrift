@@ -75,6 +75,8 @@ That runs casual, skilled, quitter, and ad-averse personas against the shipped p
 
 The adapter contract and the steps for another game are in `studio-core/sim/README.md`. GitHub Actions workflow `sim` runs the same command on pull requests and `workflow_dispatch`, uploads those two files, and posts the markdown on the job summary.
 
+`npm run analyze` reads `sim/out/results.json` and asks a local Ollama server (default `http://localhost:11434`, model `qwen2.5-coder:3b`) for pacing or tuning changes. Proposals that fail the guardrail check are rejected. Accepted ones are written to `sim/out/analysis/` with a markdown summary. `npm run analyze:trends` summarizes past runs from `sim/history/`. CI runs the analyze unit tests with a mock client and does not call Ollama. `C:\Studio\local-llm\ask.ps1` is an optional manual helper on Windows; analyze does not invoke it.
+
 ## Deploy on Vercel
 
 This repository is not linked to a Vercel project, and nothing here deploys it.

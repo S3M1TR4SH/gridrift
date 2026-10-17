@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { startStaticServer } from '../studio-core/sim/static-server.js';
 
 const PACING_URL = '/config/pacing.json';
+const TUNING_URL = '/config/tuning.json';
 
 export async function createAdapter({ root = process.cwd() } = {}) {
   const server = await startStaticServer({ root });
@@ -15,6 +16,8 @@ export async function createAdapter({ root = process.cwd() } = {}) {
     async start({ seed = 1, variant } = {}) {
       if (variant?.pacingPath) server.setOverride(PACING_URL, resolve(root, variant.pacingPath));
       else server.clearOverride(PACING_URL);
+      if (variant?.tuningPath) server.setOverride(TUNING_URL, resolve(root, variant.tuningPath));
+      else server.clearOverride(TUNING_URL);
       if (!browser) {
         browser = await chromium.launch({
           headless: true,

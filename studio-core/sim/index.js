@@ -6,3 +6,6 @@ export { wouldReturn } from './retention.js';
 export { mulberry32 } from './rng.js';
 export { runSession } from './session.js';
 export { startStaticServer } from './static-server.js';
+export { createOllamaClient } from './analyze/ollama.js';
+export { runAnalyze } from './analyze/run.js';
+export { formatTrends } from './analyze/trends.js';
