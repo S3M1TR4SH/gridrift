@@ -1,5 +1,6 @@
+import { trayPieceAlpha } from './danger.js';
 import { traySlots } from './layout.js';
-import { SHAPES } from './logic.js';
+import { SHAPES, fitsAnywhere } from './logic.js';
 
 const MAX_SPAN = Object.values(SHAPES).reduce((max, shape) => Math.max(max, shape.length, shape[0].length), 1);
 
@@ -75,7 +76,7 @@ function drawTintedSprite(ctx, asset, x, y, size, color, alpha) {
 }
 
 export function drawScene(ctx, scene) {
-  const { layout, board, pieces, registry, drag, ghost, hint, selected, juice } = scene;
+  const { layout, board, pieces, registry, drag, ghost, hint, selected, juice, danger } = scene;
   const fx = juice || {};
   const trayCell = trayCellFor(layout);
   ctx.save();
@@ -148,7 +149,7 @@ export function drawScene(ctx, scene) {
     const lifted = drag && drag.index === index;
     if (!piece || lifted || snapIndex === index) return;
     const origin = shapeOrigin(slot, piece.shape, trayCell);
-    drawPiece(ctx, piece, origin.x, origin.y, trayCell);
+    drawPiece(ctx, piece, origin.x, origin.y, trayCell, trayPieceAlpha(fitsAnywhere(board, piece.shape)));
   });
 
   if (fx.snap?.piece) {
@@ -179,15 +180,27 @@ export function drawScene(ctx, scene) {
     );
   }
 
+  if (danger?.level) {
+    ctx.save();
+    ctx.strokeStyle = danger.level >= 2 ? '#ff5d5d' : '#ffc857';
+    ctx.lineWidth = danger.level >= 2 ? 4 : 3;
+    ctx.globalAlpha = danger.reduced ? 0.9 : 0.55 + 0.45 * Math.abs(Math.sin((danger.time || 0) / 180));
+    roundRect(ctx, 2, 2, layout.boardSize - 4, layout.boardSize - 4, 12);
+    ctx.stroke();
+    ctx.restore();
+  }
   ctx.font = '700 20px system-ui, sans-serif';
   ctx.textAlign = 'center';
   for (const popup of fx.popups || []) {
     const size = 18 + (popup.level || 0) * 4;
+    const margin = size;
+    const px = Math.max(margin, Math.min(layout.boardSize - margin, popup.x));
+    const py = Math.max(margin, Math.min(layout.boardSize - 8, popup.y));
     ctx.save();
     ctx.globalAlpha = popup.alpha;
     ctx.font = `700 ${size}px system-ui, sans-serif`;
     ctx.fillStyle = popup.level >= 3 ? '#ff6fae' : popup.level >= 2 ? '#ffc857' : '#f4f7fb';
-    ctx.fillText(popup.text, popup.x, popup.y);
+    ctx.fillText(popup.text, px, py);
     ctx.restore();
   }
   ctx.restore();

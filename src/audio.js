@@ -12,7 +12,8 @@ const TONES = {
   streak2: { freq: 760, duration: 0.18, type: 'square', gain: 0.05 },
   streak3: { freq: 920, duration: 0.24, type: 'square', gain: 0.055 },
   step: { freq: 580, duration: 0.07, type: 'triangle', gain: 0.04 },
-  tap: { freq: 480, duration: 0.04, type: 'square', gain: 0.035 }
+  tap: { freq: 480, duration: 0.04, type: 'square', gain: 0.035 },
+  danger: { freq: 220, duration: 0.16, type: 'sine', gain: 0.04 }
 };
 
 export function createAudio(registry) {

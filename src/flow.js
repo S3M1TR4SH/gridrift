@@ -1,6 +1,6 @@
 import { LIMITS } from '../studio-core/index.js';
 
-export const INPUT_GUARD_MS = 400;
+export const INPUT_GUARD_MS = 0;
 export const HINT_MIN_PLAY_MS = 120_000;
 
 export function shouldIgnoreInput(now, until) {
@@ -32,21 +32,20 @@ export function canOfferHint({
   return elapsedMs >= HINT_MIN_PLAY_MS;
 }
 
-export function bootScreen() {
+export const AGE_COPY = 'What year were you born?';
+
+export function bootScreen(consent) {
+  if (!consent?.birthYear) return 'age_gate';
+  if (consent.needsAnalyticsPrompt) return 'stats_consent';
   return 'play';
 }
 
-export function agePrompt(consent) {
-  if (consent) return null;
-  return {
-    blocking: false,
-    body: 'Under 13: no ads and no stats. 13 or older can keep optional stats on this device.',
-    actions: [
-      { id: 'age_under', label: "I'm under 13" },
-      { id: 'age_13', label: "I'm 13 or older" },
-      { id: 'analytics_yes', label: '13+ and keep stats' }
-    ]
-  };
+export function agePrompt() {
+  return null;
+}
+
+export function restartConfirmCopy({ bestScore = 0 } = {}) {
+  return `Back to Round 1. Best ${bestScore} kept. This run's score, board, and round reset.`;
 }
 
 export function welcomeCopy(model = {}) {
@@ -102,12 +101,9 @@ export function viewModel(model) {
   if (model.screen === 'age_gate') {
     return card({
       screen: 'age_gate',
-      title: 'How old are you?',
-      body: 'Gridrift uses this only to decide ads and stats. It stays on this device.',
-      actions: [
-        { id: 'age_under', label: "I'm under 13", slot: 'upper', primary: false },
-        { id: 'age_13', label: "I'm 13 or older", slot: 'lower', primary: true }
-      ]
+      title: AGE_COPY,
+      body: '',
+      actions: []
     });
   }
   if (model.screen === 'kid_mode') {
@@ -176,13 +172,36 @@ export function viewModel(model) {
     if (model.doubleScore) {
       actions.push({ id: 'offer_double', label: 'Double score', slot: 'lower', primary: false });
     }
-    actions.push({ id: 'restart', label: 'Restart', slot: 'lower', primary: true });
+    actions.push({ id: 'ask_restart', label: 'Restart', slot: 'lower', primary: true });
     return card({
       screen: 'game_over',
       title: 'No moves left',
-      body: `Score ${score}. Best streak ${best}. Restart is always available.`,
+      body: `Score ${score}. Best ${model.bestScore ?? 0}.`,
       separated: false,
       actions
+    });
+  }
+  if (model.screen === 'restart_confirm') {
+    return card({
+      screen: 'restart_confirm',
+      title: 'Restart this run?',
+      body: restartConfirmCopy({ bestScore: model.bestScore ?? 0 }),
+      separated: false,
+      actions: [
+        { id: 'cancel_restart', label: 'Keep this run', slot: 'upper', primary: false },
+        { id: 'restart', label: 'Back to Round 1', slot: 'lower', primary: true }
+      ]
+    });
+  }
+  if (model.screen === 'stats_consent') {
+    return card({
+      screen: 'stats_consent',
+      title: 'Optional stats',
+      body: 'Keep stats on this device?',
+      actions: [
+        { id: 'analytics_no', label: 'No thanks', slot: 'lower', primary: true },
+        { id: 'analytics_yes', label: 'Keep stats', slot: 'upper', primary: false }
+      ]
     });
   }
   if (model.screen === 'rewarded_confirm') {

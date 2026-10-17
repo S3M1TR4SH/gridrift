@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 const ROWS = [
   ['Session length (ms)', 'meanSessionLengthMs'],
+  ['Median session (ms)', 'medianSessionLengthMs'],
   ['Would-return', 'meanWouldReturn'],
   ['Clears', 'meanClears'],
   ['Combos', 'meanCombos'],
@@ -39,6 +40,7 @@ export function formatSummary(report) {
     `Compared ${variants.length} variants across ${personas.length} persona${personas.length === 1 ? '' : 's'} and ${seeds.length} seed${seeds.length === 1 ? '' : 's'} (${sessions.length} sessions, safety cap ${maxSteps} steps).`,
     `Personas: ${personas.join(', ')}. Seeds: ${seeds.join(', ')}.`,
     `Baseline is ${baseline}. The same seeds are used for every variant. Session length is the sum of persona think time.`,
+    `Median session for ${challenger.id} is ${comparison.metrics.medianSessionLengthMs[challenger.id]}ms versus baseline ${baseline} ${comparison.metrics.medianSessionLengthMs[baseline]}ms (delta ${comparison.metrics.medianSessionLengthMs.delta[challenger.id] ?? 0}). Target median is ${comparison.targetSessionMs}ms.`,
     '',
     `Would-return for ${challenger.id} is ${returns[challenger.id]} versus ${baseline} ${returns[baseline]} (delta ${returns.delta[challenger.id] ?? 0}).`,
     '',

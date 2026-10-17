@@ -1,6 +1,9 @@
 export function createUi(doc = document) {
   const overlay = doc.querySelector('#overlay');
   const score = doc.querySelector('#score');
+  const nextGoal = doc.querySelector('#next-goal');
+  const lowSpace = doc.querySelector('#low-space');
+  const roundNotice = doc.querySelector('#round-notice');
   const best = doc.querySelector('#best');
   const streak = doc.querySelector('#streak');
   const round = doc.querySelector('#round');
@@ -62,6 +65,11 @@ export function createUi(doc = document) {
     },
     setHud(hud) {
       score.textContent = String(hud.score);
+      if (nextGoal) nextGoal.textContent = String(hud.nextGoal ?? '');
+      if (lowSpace) {
+        lowSpace.hidden = !hud.lowSpace;
+        lowSpace.textContent = hud.lowSpace || '';
+      }
       if (best) best.textContent = String(hud.best ?? 0);
       streak.textContent = String(hud.streak);
       round.textContent = hud.round;
@@ -114,6 +122,9 @@ export function createUi(doc = document) {
     },
     setBanner(model) {
       if (!banner) return;
+      const key = model ? JSON.stringify(model) : '';
+      if (banner.dataset.model === key) return;
+      banner.dataset.model = key;
       if (!model) {
         banner.hidden = true;
         banner.replaceChildren();
@@ -133,6 +144,7 @@ export function createUi(doc = document) {
       banner.append(copy, row);
     },
     setOverlay(view) {
+      if (overlay.dataset.gate === 'age' && view?.screen !== 'age_gate') delete overlay.dataset.gate;
       if (!view || view.screen === 'play') {
         overlay.hidden = true;
         overlay.replaceChildren();
@@ -171,6 +183,51 @@ export function createUi(doc = document) {
       if (lower.childElementCount) panel.append(lower);
       overlay.hidden = false;
       overlay.replaceChildren(panel);
+    },
+    setAgeGate({ years, copy }) {
+      if (overlay.dataset.gate === 'age') return;
+      overlay.dataset.gate = 'age';
+      const panel = doc.createElement('div');
+      panel.className = 'panel';
+      const heading = doc.createElement('h2');
+      heading.textContent = copy;
+      const select = doc.createElement('select');
+      select.id = 'birth-year';
+      const placeholder = doc.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Year';
+      select.append(placeholder);
+      for (const year of years) {
+        const option = doc.createElement('option');
+        option.value = String(year);
+        option.textContent = String(year);
+        select.append(option);
+      }
+      const action = doc.createElement('button');
+      action.type = 'button';
+      action.dataset.action = 'confirm_year';
+      action.textContent = 'Continue';
+      action.disabled = true;
+      select.addEventListener('change', () => {
+        action.disabled = select.value === '';
+        if (select.value) action.dataset.action = `birth_year:${select.value}`;
+      });
+      panel.append(heading, select, action);
+      overlay.hidden = false;
+      overlay.replaceChildren(panel);
+    },
+    clearAgeGate() {
+      if (overlay.dataset.gate !== 'age') return;
+      delete overlay.dataset.gate;
+    },
+    setRoundNotice(text) {
+      if (!roundNotice) return;
+      if (!text) {
+        roundNotice.hidden = true;
+        return;
+      }
+      roundNotice.hidden = false;
+      roundNotice.textContent = text;
     }
   };
 }

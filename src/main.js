@@ -1,19 +1,26 @@
 import assetManifest from '../assets.manifest.json' with { type: 'json' };
 import brand from '../branding/brand.json' with { type: 'json' };
 import analyticsConfig from '../config/analytics.json' with { type: 'json' };
+import difficultyConfig from '../config/difficulty.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
 import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
 import {
   applyAnalyticsChoice,
+  canNotify,
   celebrationLevel,
+  consentFromBirthYear,
+  createAdMobAdapter,
   createConsentStore,
   createFeedback,
   createGuardedAds,
+  createH5GamesAdsAdapter,
   createInstallController,
   createMixpanelAdapter,
+  createNoopAdapter,
   createPacer,
   createTracker,
+  createWebAdBridge,
   evaluateAgeGate,
   memoryStorage,
   neutralizePacing,
@@ -40,7 +47,9 @@ import {
 import { createPointerState, pointerReducer } from './input.js';
 import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
-import { canPlace, createMatch, isStuck } from './logic.js';
+import { dangerCue, dropFeedback, placementCount, roundClearedNotice } from './danger.js';
+import { easedRun, generateTray, goalForRound, gridForRound } from './difficulty.js';
+import { canPlace, createBoard, createMatch, isStuck, nextScoreGoal } from './logic.js';
 import { coachMarks, openingBoard, scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
 import { beginRun, milestoneHit, noteLoss, noteSuccess, shouldShowWelcome, STREAK_RESET_COPY, bandShapes } from './retention.js';
 import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
@@ -106,7 +115,29 @@ function start() {
     isChild: () => !consent || Boolean(consent.isChild),
     sessionNumber: (progress.sessions || 0) + 1
   });
-  const ads = createGuardedAds({ pacer });
+  const adBridge = createWebAdBridge();
+  const noopAds = createNoopAdapter();
+  const h5Ads = createH5GamesAdsAdapter();
+  const admobAds = createAdMobAdapter({ bridge: adBridge });
+  function liveAdapter() {
+    if (!consent?.birthYear || consent.isChild || consent.adsAllowed === false || !pacing.ads?.testMode) return noopAds;
+    if (canNotify(consent) === false && consent.isChild) return noopAds;
+    return adBridge.available ? admobAds : h5Ads;
+  }
+  const ads = createGuardedAds({
+    pacer,
+    adapter: {
+      get id() {
+        return liveAdapter().id;
+      },
+      showInterstitial(request) {
+        return liveAdapter().showInterstitial(request);
+      },
+      showRewarded(request) {
+        return liveAdapter().showRewarded(request);
+      }
+    }
+  });
   let reducedMotion = initialMotion({
     stored: progress.settings?.reducedMotion ?? null,
     query: typeof matchMedia === 'function' ? matchMedia.bind(window) : null
@@ -159,10 +190,26 @@ function start() {
   let rewardKind = null;
   let sessionNoted = false;
   let overlayKey = '';
+  let assistDealsLeft = 0;
+  let roundNoticeUntil = 0;
+  let lastDangerLevel = 0;
+  const roundNotice = roundClearedNotice();
+
+  function roundNumber() {
+    return levelIndex + 1;
+  }
 
   function level() {
     const id = tuning.levelOrder[Math.min(levelIndex, tuning.levelOrder.length - 1)];
     return LEVELS[id] ?? LEVELS['round-01'];
+  }
+
+  function roundGoal() {
+    return goalForRound(roundNumber(), difficultyConfig);
+  }
+
+  function roundGrid() {
+    return gridForRound(roundNumber(), difficultyConfig);
   }
 
   function scoreTuning() {
@@ -188,15 +235,36 @@ function start() {
 
   function makeMatch(saved) {
     const dailyTarget = dailyObjective(utcSeed(), retention.dailyChallenge.objectiveRange);
+    const grid = saved?.board?.length || (mode === 'daily' ? tuning.grid : roundGrid());
     return createMatch({
-      grid: tuning.grid,
+      grid,
       traySize: tuning.traySize,
       score: scoreTuning(),
       rng: mulberry32(mode === 'daily'
         ? utcSeed()
         : ((Date.now() ^ ((levelIndex + 1) * 997)) >>> 0)),
-      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : level().targetClears),
+      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : roundGoal()),
       poolFor: dealPool,
+      generator: difficultyConfig && mode !== 'daily'
+        ? (board, state, rng) => {
+          const run = easedRun({
+            moves,
+            elapsedMs: playMs,
+            score: state.score,
+            totalClears: state.totalClears,
+            assistDealsLeft
+          }, { mercy: easyRun });
+          const out = generateTray({
+            board,
+            run,
+            cfg: difficultyConfig,
+            rng,
+            count: tuning.traySize
+          });
+          if (out.assist && assistDealsLeft > 0) assistDealsLeft -= 1;
+          return out;
+        }
+        : null,
       palette,
       saved
     });
@@ -255,6 +323,8 @@ function start() {
   }
 
   function screen() {
+    if (!consent?.birthYear) return 'age_gate';
+    if (consent.needsAnalyticsPrompt) return 'stats_consent';
     if (overlay?.screen) return overlay.screen;
     return 'play';
   }
@@ -445,7 +515,9 @@ function start() {
       streak: match.state.streak
     });
     persist();
-    show({ screen: 'round_complete', doubleScore: doubleReady() });
+    roundNoticeUntil = performance.now() + roundNotice.dismissMs;
+    ui.setRoundNotice(roundNotice.text);
+    startNextRound();
   }
 
   function finishGame() {
@@ -489,10 +561,27 @@ function start() {
   }
 
   function startNextRound() {
+    const kept = match.state;
     levelIndex = Math.min(levelIndex + 1, tuning.levelOrder.length - 1);
-    match.nextRound(level().targetClears);
+    const nextGrid = roundGrid();
+    const goal = roundGoal();
+    if (nextGrid !== kept.grid) {
+      match = makeMatch({
+        board: createBoard(nextGrid),
+        pieces: [null, null, null],
+        score: kept.score,
+        streak: kept.streak,
+        bestStreak: kept.bestStreak,
+        totalClears: kept.totalClears,
+        roundClears: 0,
+        phase: 'playing',
+        targetClears: goal
+      });
+    } else {
+      match.nextRound(goal);
+    }
     overlay = null;
-    armIgnore();
+    if (!pointer.drag) pointer = createPointerState();
     tracker.track('round_start', { round: level().id });
     tap();
     persist();
@@ -507,6 +596,8 @@ function start() {
     doublesUsed = 0;
     playMs = 0;
     sawStuck = false;
+    assistDealsLeft = 0;
+    moves = 0;
   }
 
   function hintReady() {
@@ -589,6 +680,7 @@ function start() {
       }
     } else {
       continueUses += 1;
+      assistDealsLeft = difficultyConfig.assist?.continueAssistDeals || 0;
       const outcome = match.continueRun(rowsForContinue(tuning.continueClears));
       overlay = null;
       audio.play('sfx.clear');
@@ -629,18 +721,47 @@ function start() {
       });
       return;
     }
+    if (id.startsWith('birth_year:')) {
+      const year = Number(id.slice('birth_year:'.length));
+      try {
+        consent = consentStore.save(consentFromBirthYear(year));
+      } catch {
+        return;
+      }
+      ui.clearAgeGate();
+      tap();
+      void tracker.sync();
+      return;
+    }
     if (id === 'age_under') {
-      consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      const year = new Date().getFullYear() - 8;
+      consent = consentStore.save(consentFromBirthYear(year));
       consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      ui.clearAgeGate();
       tap();
       void tracker.sync();
       return;
     }
     if (id === 'age_13') {
-      consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
-      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      const year = new Date().getFullYear() - 20;
+      consent = consentStore.save(consentFromBirthYear(year));
+      ui.clearAgeGate();
       tap();
       void tracker.sync();
+      return;
+    }
+    if (id === 'ask_restart') {
+      tap();
+      show({ screen: 'restart_confirm' });
+      return;
+    }
+    if (id === 'cancel_restart') {
+      tap();
+      show({
+        screen: 'game_over',
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true, continueClosed),
+        doubleScore: doubleReady()
+      });
       return;
     }
     if (id === 'analytics_yes' || id === 'analytics_no') {
@@ -809,6 +930,14 @@ function start() {
   function publishOverlay(force) {
     const state = match.state;
     const name = screen();
+    if (name === 'age_gate') {
+      const current = new Date().getFullYear();
+      const years = [];
+      for (let year = current; year >= 1900; year -= 1) years.push(year);
+      ui.setAgeGate({ years, copy: 'What year were you born?' });
+      return;
+    }
+    ui.clearAgeGate();
     const view = viewModel({
       screen: name,
       rewarded: Boolean(overlay?.rewarded),
@@ -855,8 +984,8 @@ function start() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(layout.canvasWidth * dpr);
     canvas.height = Math.round(layout.canvasHeight * dpr);
-    canvas.style.width = '100%';
-    canvas.style.height = `${playHeight}px`;
+    canvas.style.width = `${layout.canvasWidth}px`;
+    canvas.style.height = `${layout.canvasHeight}px`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
@@ -899,7 +1028,9 @@ function start() {
   }
 
   function commitPlace(index, x, y, point = null) {
+    moves += 1;
     const result = match.place(index, x, y);
+    if (!result.ok) moves -= 1;
     if (!result.ok) {
       if (point) {
         const piece = match.state.pieces[index];
@@ -919,7 +1050,6 @@ function start() {
       return result;
     }
     audio.play('sfx.place');
-    moves += 1;
     tracker.track('piece_placed', { cells: result.gained, x, y });
     if (result.lines > 0) {
       const burst = feedback.clear({
@@ -1035,6 +1165,15 @@ function start() {
     if (screen() === 'play') playMs += elapsed;
     if (!sawStuck && screen() === 'play' && isStuck(match.state.board, match.state.pieces)) sawStuck = true;
     const state = match.state;
+    if (roundNoticeUntil && now >= roundNoticeUntil) {
+      roundNoticeUntil = 0;
+      ui.setRoundNotice('');
+    }
+    const cue = screen() === 'play'
+      ? dangerCue(placementCount(state.board, state.pieces), difficultyConfig.danger)
+      : null;
+    if (cue?.sound && !reducedMotion && cue.level !== lastDangerLevel) audio.play(cue.sound);
+    lastDangerLevel = cue?.level || 0;
     const fx = feedback.sample(now);
     let ghost = null;
     let drag = null;
@@ -1070,12 +1209,15 @@ function start() {
       ghost,
       hint: state.hint,
       selected: pointer.selected,
-      juice: fx
+      juice: fx,
+      danger: cue ? { level: cue.level, reduced: reducedMotion, time: now } : null
     });
     const steps = feedback.config.streakSteps;
     const meterMax = steps[steps.length - 1] || 6;
     ui.setHud({
       score: state.score,
+      nextGoal: nextScoreGoal(state.score, tuning.score.goals),
+      lowSpace: dangerCue(placementCount(state.board, state.pieces), difficultyConfig.danger)?.label || '',
       best: Math.max(progress.bestScore || 0, state.score),
       streak: state.streak,
       combo: state.combo,
@@ -1086,7 +1228,7 @@ function start() {
         ? coachMarks(state.targetClears)[Math.min(coachStep, coachMarks(state.targetClears).length - 1)].text
         : mode === 'daily'
           ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}${dailyNote ? ` · ${dailyNote}` : ''}`
-          : `Clear ${state.targetClears} lines`,
+          : `Clear ${state.targetClears} lines · Next ${nextScoreGoal(state.score, tuning.score.goals)}`,
       meter: Math.max(0, Math.min(1, state.streak / meterMax)),
       meterMax,
       celebrate: celebrationLevel(state.streak, steps),
@@ -1097,7 +1239,7 @@ function start() {
       dailyOn: mode === 'daily',
       reducedMotion,
       haptics: hapticsOn,
-      install: install.available && screen() === 'play',
+      install: install.available,
       stats: screen() === 'play' && Boolean(consent && !consent.isChild && consent.analyticsAllowed),
       muted: audio.muted
     });

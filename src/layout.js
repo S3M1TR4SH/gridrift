@@ -6,34 +6,21 @@ if (CONTROL_GAP_PX < LIMITS.ads.minControlSeparationPx) {
   throw new Error('control gap is below the ad guardrail');
 }
 
+export const BOARD_MAX_PX = 560;
+
 export function computeLayout({ width, height, grid = 10, playHeight } = {}) {
-  const chrome = height > width ? 220 : 150;
   const gap = 8;
-  const availW = Math.max(220, width);
-  const budget = playHeight == null ? Math.max(280, height - chrome) : Math.max(280, playHeight);
-  const trayFloor = 88;
-  const trayCap = 140;
-  let trayHeight = Math.max(trayFloor, Math.min(trayCap, Math.floor(budget * 0.22)));
-  let boardMax = Math.max(grid * 14, budget - trayHeight - gap);
-  let cell = Math.max(14, Math.floor(Math.min(availW / grid, boardMax / grid)));
+  const trayFloor = 96;
+  const trayCap = 180;
+  const availW = Math.min(BOARD_MAX_PX, Math.max(grid * 14, width));
+  let cell = Math.max(14, Math.floor(availW / grid));
   let boardSize = cell * grid;
-  let canvasHeight = boardSize + gap + trayHeight;
-  let trayTop = boardSize + gap;
+  let trayHeight = Math.min(trayCap, Math.max(trayFloor, cell * 2));
   if (playHeight != null) {
-    canvasHeight = Math.floor(budget);
-    const room = canvasHeight - boardSize - gap;
-    if (room >= trayFloor) {
-      trayHeight = Math.min(trayCap, room);
-      trayTop = canvasHeight - trayHeight;
-    } else {
-      trayHeight = Math.max(48, Math.floor(room));
-      const boardRoom = Math.max(grid * 14, canvasHeight - trayHeight - gap);
-      cell = Math.max(14, Math.floor(Math.min(availW / grid, boardRoom / grid)));
-      boardSize = cell * grid;
-      trayHeight = Math.max(48, canvasHeight - boardSize - gap);
-      trayTop = canvasHeight - trayHeight;
-    }
+    const room = Math.floor(playHeight) - boardSize - gap;
+    if (room >= trayFloor) trayHeight = Math.min(trayCap, room);
   }
+  const trayTop = boardSize + gap;
   return {
     cell,
     grid,
@@ -42,17 +29,16 @@ export function computeLayout({ width, height, grid = 10, playHeight } = {}) {
     trayHeight,
     trayTop,
     canvasWidth: boardSize,
-    canvasHeight,
-    anchor: 'upper'
+    canvasHeight: trayTop + trayHeight,
+    anchor: 'upper',
+    maxBoard: BOARD_MAX_PX
   };
 }
 
-export function snapOrigin(localX, localY, cell, shape) {
-  const width = shape[0].length;
-  const height = shape.length;
+export function snapOrigin(localX, localY, cell) {
   return {
-    x: Math.round(localX / cell - width / 2),
-    y: Math.round(localY / cell - height / 2)
+    x: Math.floor(localX / cell),
+    y: Math.floor(localY / cell)
   };
 }
 

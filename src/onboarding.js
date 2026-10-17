@@ -40,12 +40,6 @@ export function coachMarks(clearsGoal = 4) {
 export function openingBoard(grid = 6) {
   const board = createBoard(grid);
   for (let x = 0; x < grid - 3; x += 1) board[0][x] = '#8b95a8';
-  for (let y = 1; y < grid; y += 1) {
-    const hole = (y + 1) % grid;
-    for (let x = 0; x < grid; x += 1) {
-      if (x !== hole) board[y][x] = '#8b95a8';
-    }
-  }
   const colors = ['#3d8bfd', '#5ee1b4', '#ffb020'];
   const pieces = colors.map((color) => ({
     shapeName: 'line3',

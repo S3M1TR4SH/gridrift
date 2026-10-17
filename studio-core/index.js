@@ -21,7 +21,10 @@ export { createTracker } from './analytics/tracker.js';
 export {
   COPPA_AGE,
   CONSENT_STORAGE_KEY,
+  ageFromBirthYear,
   applyAnalyticsChoice,
+  canNotify,
+  consentFromBirthYear,
   createConsentStore,
   evaluateAgeGate,
   memoryStorage

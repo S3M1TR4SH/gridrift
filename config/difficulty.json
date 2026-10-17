@@ -1,0 +1,65 @@
+{
+  "version": "1.1",
+  "basedOn": "main 65d60f9",
+  "inputs": ["board", "moves", "elapsedMs", "score", "totalClears", "assistDealsLeft"],
+  "excludedInputs": ["bestScore", "adAvailability", "rewardedReady", "adFill", "lossHistory"],
+  "hardRules": {
+    "failBias": 0,
+    "forceUnplaceable": false,
+    "allowStuckState": false
+  },
+  "timeModel": {
+    "secondsPerMove": 2.5
+  },
+  "roundSetup": {
+    "prefillRound1": "onboarding opening only",
+    "prefillAfterRound1": false
+  },
+  "gridSize": {
+    "opening": 6,
+    "fromRound": 2,
+    "size": 8
+  },
+  "goals": [4, 6, 10, 14],
+  "ramp": {
+    "startS": 60,
+    "fullS": 120,
+    "scoreStart": 250,
+    "scoreFull": 700,
+    "scoreWeight": 0.8,
+    "curveExponent": 1
+  },
+  "generosity": {
+    "earlyClearBias": 0.6,
+    "lateClearBias": 0,
+    "fitAllBelowIntensity": 0.15
+  },
+  "tiers": [
+    {
+      "at": 0,
+      "shapes": { "line2": 2, "line2v": 2, "line3": 3, "line3v": 3, "square": 2, "corner": 3 }
+    },
+    {
+      "at": 0.4,
+      "shapes": { "line3": 2, "line3v": 2, "l": 2, "j": 2, "t": 2, "s": 2, "z": 2, "square": 2, "u": 1, "corner": 1 }
+    },
+    {
+      "at": 0.75,
+      "shapes": { "line4": 2, "line4v": 2, "l": 2, "j": 2, "t": 2, "s": 2, "z": 2, "u": 2, "plus": 1, "rect": 1, "corner3": 1, "sTall": 1, "zTall": 1 }
+    },
+    {
+      "at": 1,
+      "shapes": { "line4": 2, "line4v": 2, "line5": 1, "plus": 2, "rect": 2, "corner3": 2, "sTall": 2, "zTall": 2, "u": 2, "t": 1 }
+    }
+  ],
+  "assist": {
+    "continueAssistDeals": 2,
+    "assistClearBias": 1,
+    "assistShapes": ["line2", "line2v", "line3", "line3v", "square", "corner"],
+    "continueRowsCleared": 3
+  },
+  "danger": {
+    "fewPlacements": 8,
+    "criticalPlacements": 4
+  }
+}

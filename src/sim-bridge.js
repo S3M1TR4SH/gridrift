@@ -108,12 +108,18 @@ export function attachSimBridge(api) {
     const view = api.getView();
     const playing = view.screen === 'play';
     const actions = [];
+    if (view.screen === 'age_gate') {
+      actions.push(
+        { type: 'ui', id: 'age_13', uiId: 'age_13', label: 'Year' },
+        { type: 'ui', id: 'age_under', uiId: 'age_under', label: 'Year' }
+      );
+    }
     if (playing) {
       actions.push(...listMoves(match.board, match.pieces));
       if (api.canHint()) {
         actions.push({ type: 'ui', id: 'offer_hint', uiId: 'offer_hint', label: 'Hint' });
       }
-    } else {
+    } else if (view.screen !== 'age_gate') {
       for (const action of view.actions) {
         actions.push({ type: 'ui', id: action.id, uiId: action.id, label: action.label });
       }

@@ -228,3 +228,142 @@ Fix:
 
 ### Not yet verified
 - A break ad and the continue re-offer loop the sim found. Re-test both after the P0 fix.
+
+---
+
+## Playtest 65d60f9 evidence (2026-10-17 CT)
+Sources:
+- `/workspace/playtest/2026-10-17-65d60f9/gridrift-retest-2026-10-17-65d60f9.md` and `raw-session-notes.md`
+- Screenshots 01-16. The clips weren't watched; their content is taken from the report text.
+- Gate report: `/workspace/playtest/release-gate/gridrift-main-65d60f9-gate.md`
+
+**Gate:** FAIL.
+- Median sim session was 32.6s (needs 60s).
+- Human-feel average 4.6 (needs 6), with difficulty at 2 (needs 4).
+- Ads are disabled in `config/pacing.json`, so the ad gate passed by code review only.
+
+Observations marked (XD) come from XD S1M's review of the screenshots.
+
+### Progress on items #1-#3
+| Item | Status | Evidence |
+|---|---|---|
+| #1 Persist + welcome-back | **Mostly done.** A reload restores score, best, streak, round, lines and the exact board. Return hook went from 2 to 5. Still open: the welcome-back banner hasn't been seen (it needs 30+ min away), and Restart silently resets Round 3 → Round 1 | 10, 08-09 |
+| #2 Clear payoff | **Mostly done.** +38 popup, particles, "Combo 2", red ghost on invalid drops, fixed tray slots. Juice went from 3 to 6. Still open: the streak popup is clipped (d), and the invalid-drop shake and sound weren't confirmed | 04b, 02, 05, 06 |
+| #3 Onboarding | **Done.** Play starts on the board with a highlighted row and a goal subtitle. The goal is understood in about 5s and the first clear comes at about 20s. Clarity went from 4 to 8. The per-level clear goal (Lines x/4, x/6, x/8) works | 01, 02 |
+| P0 Continue disclosure | **Resolved by removal (c).** Game over shows Restart only. Re-open this when a rewarded continue comes back, using the P0 config from the 9b0e0c9 section | 08, 09 |
+
+### Re-rank (warranted)
+Now that #1-#3 are largely done, **#4 Difficulty/tension moves to the top**. Difficulty fell from 6 to 2, the tester couldn't lose in Rounds 1-3, and "a reward every move feels cheap" (reward pacing 5). Excitement and replayability are both at 3, and human players are well behind the sim's 60s session target.
+
+New order:
+1. **NEW-P0 compliance:** neutral age screen
+2. **#4** Tension
+3. **Input fixes** (new)
+4. Layout (desktop and portrait)
+5. Finish #1 (Restart framing, welcome-back)
+6. #5 Daily/streak
+7. #6 Notifications
+8. #9 Session hooks
+9. #7 Progression
+10. #8 Cosmetics
+
+### NEW-P0 (compliance). Neutral age screen. Effort: S
+(b, XD) The first load shows an inline prompt with "I'm under 13 / I'm 13 or older / 13+ and keep stats", and its text says the under-13 option means no ads and no stats. The tester reports the buttons keep re-rendering, so clicks fail (fix #5).
+
+Keeping under-13 players free of ads and stats is correct. The problem is the prompt itself: it shows which answer unlocks features, it's three self-labelled buttons rather than a neutral question, and it overlaps gameplay. For a mixed audience under Play Families, ask in a neutral way that doesn't push the player toward any particular answer [Est/compliance; interpreting the Play Families policy (https://support.google.com/googleplay/android-developer/answer/9893335) and COPPA (https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions). Neither page was fetched in this pass; legal review recommended].
+
+Fix:
+- Show a full-screen birth-year picker before the first board. It has no default value and no copy saying what any answer unlocks.
+- Remember the result locally and don't ask again. A wrong answer can't be retried by reloading.
+- Derive the policy from the year.
+- Ask for stats consent separately, after the age gate and only for 13+.
+- Render the picker once, so its controls are stable.
+```json
+"ageGate": { "enabled": true, "mode": "birthYear", "showBefore": "firstPlay", "defaultValue": null, "yearRange": [1900, "currentYear"],
+  "neutralCopy": "What year were you born?", "revealConsequences": false, "rememberResult": true, "allowRetry": false,
+  "underAge": 13, "policyUnder": { "ads": false, "analytics": false, "notifications": false, "personalizedAds": false },
+  "policyAtOrOver": { "ads": "nonPersonalizedUntilConsent", "analytics": "askConsent" },
+  "statsConsent": { "separateScreen": true, "default": "off" }, "stableRender": true }
+```
+
+### #4 Tension. Concrete proposal. Effort: M. Metrics: D1, session length
+Evidence:
+- (a, XD) The board is now 6x6 (it was 10x10) and deals 3-cell straight pieces. Round 3 at Lines 1/8 still has plenty of room (15).
+- The opening board is a solved setup, and "nearly every placement cleared something, even when I placed badly on purpose" (04c).
+
+Diagnosis [Est]:
+- The genre reference boards are 8x8 (1010!, Block Blast) or 9x9 (Woodoku; see the appireview link in #4 above).
+- On a 6x6 board, a 3-cell straight piece fills half a row, so lines complete almost by themselves.
+- The tray deals pieces that are guaranteed to fit, which removes all risk.
+
+**Proposal:**
+- Go back to **8x8** for normal rounds. Keep 6x6 only for the scripted first board.
+- Use a weighted piece mix that adds awkward shapes as rounds go on (L, T, S/Z, 2x2, 3x3, 1x5).
+- Weaken the "fit" guarantee from "every piece fits and helps" to **"at least one piece in the tray can be placed"**.
+- Rounds start with partial pre-fill and increasing goals.
+- Mercy after repeated losses only ever makes the game easier, and **nothing depends on ad availability or fill**.
+```json
+"difficulty": {
+  "boardByRound": [ { "rounds": [1,1], "size": 6, "scripted": true }, { "rounds": [2,999], "size": 8 } ],
+  "pieceMix": {
+    "tiers": [
+      { "rounds": [1,2], "weights": { "mono": 0.10, "line2": 0.20, "line3": 0.30, "L3": 0.25, "sq2": 0.15 } },
+      { "rounds": [3,5], "weights": { "line3": 0.20, "line4": 0.15, "L3": 0.15, "L4": 0.15, "T4": 0.10, "S4": 0.10, "sq2": 0.10, "sq3": 0.05 } },
+      { "rounds": [6,999], "weights": { "line3": 0.10, "line4": 0.15, "line5": 0.10, "L4": 0.15, "L5": 0.10, "T4": 0.10, "S4": 0.10, "sq2": 0.10, "sq3": 0.10 } } ],
+    "ranges": { "anyWeight": [0, 0.4] } },
+  "deal": { "guarantee": "atLeastOnePlaceable", "noHelpfulBias": true, "rng": "seededPerRun" },
+  "roundSetup": { "prefillRatioByRound": [[1,0.40],[2,0.20],[4,0.30],[7,0.35]], "prefillRange": [0, 0.45],
+    "linesGoalByRound": [[1,4],[2,6],[3,8],[5,10],[8,12]] },
+  "fillPressure": { "targetMeanFillRatio": [0.45, 0.65], "dangerFillRatio": 0.75 },
+  "mercy": { "afterLossesInRow": 3, "effect": { "pieceTier": -1, "prefillRatio": -0.10 }, "durationRuns": 1, "onlyEasier": true },
+  "adIndependent": { "rngIgnoresAdFill": true, "rngIgnoresRewardedHistory": true, "mercyIgnoresAds": true }
+}
+```
+
+**Sim acceptance targets** [Est; starting bands to tune]:
+
+| Round | Loss rate per attempt | Moves per round | Mean fill ratio |
+|---|---|---|---|
+| 1 (scripted) | ≤2% | 4-8 | — |
+| 2 | 5-15% | 10-20 | 0.40-0.55 |
+| 3-5 | 15-30% | 15-30 | 0.45-0.65 |
+| 6+ | 25-45% | 20-40 | 0.50-0.70 |
+
+Gates:
+- Median session ≥60s (the release-gate target).
+- Early-quit rate no worse than today's 6%.
+- No round may have a 0% loss rate.
+- No round may have a loss rate above 60%.
+- **The loss-rate difference between ads-on and ads-off variants must be 0 within noise** (the rigging check).
+
+**Sim fidelity:** the report notes that sim personas reach game over within 20-50 steps, while the human couldn't lose. Calibrate the personas against the human placement policy, which places carelessly and still clears, before trusting these bands.
+
+### NEW input fixes (rank 3). Effort: S
+Evidence:
+- (14) A quick second drag right after a placement or snap-back is ignored.
+- (06) The drop target is computed from the piece's center, not the pointer, so drops land a row off.
+- The dragged piece sits centered under the finger.
+```json
+"input": { "acceptDragDuringSettleAnim": true, "inputLockMs": 0, "dropTargetFrom": "pointerWithOffset", "dragOffsetPx": 60 }
+```
+
+### Layout (rank 4). Effort: S
+- (e, XD; 16) At desktop width, cells stretch to about 213x85 and tray pieces are distorted. Cap the board width, lock cells square, center the HUD, and size the tray cards to their pieces.
+- (d, XD; 05) The "Streak x2" popup clips off the top of the board. Keep popups inside the board.
+- Portrait (557px): about 240px of dead space between the board and the tray, and the HUD text is about 12px. Keep the 9b0e0c9 `layout.mobilePortrait` delta.
+- The Install button disappears at game over (LOW).
+```json
+"layout": { "board": { "maxWidthPx": 560, "cellAspect": 1, "center": true }, "hud": { "maxWidthPx": 560, "center": true, "minFontPx": 14 },
+  "tray": { "cardMaxPx": 180, "pieceScale": "matchBoardCell" },
+  "popups": { "clampToBoardBounds": true, "anchor": "clearCentroid" }, "keepInstallButtonOnModals": true }
+```
+
+### Finish #1: Restart framing (rank 5)
+(08, 09) Restart silently sends you from Round 3 back to Round 1. Before restarting, state what happens ("Back to Round 1. Best 502 kept"), or restart at the current round's checkpoint. The best option is to A/B test the two.
+```json
+"restart": { "mode": "checkpointRound", "modeOptions": ["round1", "checkpointRound"], "showConsequenceCopy": true,
+  "gameOverCard": { "showBest": true, "showDeltaToBest": true, "primary": "restart" } }
+```
+
+### Ads
+None are shipped. When they're enabled, use the engagement-ad-design.md rules and the P0 continue config, and re-run the ad gate on a live build.

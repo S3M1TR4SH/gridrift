@@ -19,6 +19,7 @@ const SFX = {
   'sfx.game_over': 'game_over',
   'sfx.clear': 'clear',
   'sfx.invalid': 'invalid',
+  'sfx.danger': 'danger',
   'sfx.streak.1': 'streak1',
   'sfx.streak.2': 'streak2',
   'sfx.streak.3': 'streak3',

@@ -25,21 +25,26 @@ function settle(result) {
 /**
  * Google H5 Games Ads behind a synchronous host bridge.
  * This module does not load a tag. The host may install `__studioH5Ads`
- * only after an adult consent decision, and only if `adBreak` returns
- * a plain object. A promise is discarded so a tag cannot hide a request.
+ * only after a consent decision, and only if `adBreak` returns a plain
+ * object. A promise is discarded so a tag cannot hide a request.
  */
-export function createH5GamesAdsAdapter({ host = globalThis } = {}) {
+export function createH5GamesAdsAdapter({ host = globalThis, childDirected = () => false } = {}) {
+  function request(base) {
+    if (!childDirected()) return base;
+    return { ...base, nonPersonalized: true, childDirected: true };
+  }
+
   return {
     id: 'h5-games-ads',
     showInterstitial({ breakType } = {}) {
       const bridge = synchronousBridge(host);
       if (!bridge) return { shown: false, rewarded: false, reason: 'sdk_not_loaded' };
-      return settle(bridge.adBreak({ type: 'browse', name: breakType }));
+      return settle(bridge.adBreak(request({ type: 'browse', name: breakType })));
     },
     showRewarded({ placement } = {}) {
       const bridge = synchronousBridge(host);
       if (!bridge) return { shown: false, rewarded: false, reason: 'sdk_not_loaded' };
-      return settle(bridge.adBreak({ type: 'reward', name: placement }));
+      return settle(bridge.adBreak(request({ type: 'reward', name: placement })));
     }
   };
 }
