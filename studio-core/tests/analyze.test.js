@@ -85,6 +85,8 @@ test('compact summary keeps comparison metrics and drops session payloads', () =
   const summary = compactSummary(resultsFixture());
   assert.equal(summary.baseline, 'control');
   assert.equal(summary.metrics.meanWouldReturn.quiet, 0.7);
+  assert.equal(summary.quitReasons.safety_cap, 0);
+  assert.equal(summary.quitReasons.frustration, 0);
   assert.equal(JSON.stringify(summary).includes('do-not-send'), false);
   assert.equal(Object.hasOwn(summary, 'sessions'), false);
 });
@@ -287,6 +289,7 @@ test('optional resim wires the patched config through the session runner', async
         async readState() { return { screen: 'end', score: 0, clears: 0, combo: 0, failed: false, ended: true, ad: null }; },
         async listActions() { return []; },
         async perform() { return { ok: true }; },
+        async isGameOver() { return false; },
         async stop() {},
         async dispose() {}
       };

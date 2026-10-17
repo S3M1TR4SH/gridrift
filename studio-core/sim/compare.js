@@ -1,5 +1,5 @@
 import { resolvePersona } from './personas.js';
-import { runSession } from './session.js';
+import { runSession, SAFETY_CAP } from './session.js';
 
 function round(value, digits = 3) {
   const factor = 10 ** digits;
@@ -85,7 +85,7 @@ export async function runComparison({
   variants,
   personas,
   seeds,
-  maxSteps = 40
+  maxSteps = SAFETY_CAP
 }) {
   const sessions = [];
   for (const variant of variants) {

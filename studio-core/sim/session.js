@@ -1,7 +1,9 @@
 import { assertAdapter } from './adapter.js';
-import { chooseAction } from './personas.js';
+import { chooseAction, freshMood, quitReasonForMood, tickMood } from './personas.js';
 import { wouldReturn } from './retention.js';
 import { mulberry32 } from './rng.js';
+
+export const SAFETY_CAP = 500;
 
 function thinkTime(persona) {
   const value = Number(persona.thinkMs);
@@ -54,8 +56,14 @@ async function snapshot(adapter) {
   return { ...state, actions };
 }
 
-export async function runSession({ adapter, persona, seed, maxSteps = 40, variant }) {
+function finishQuit(log, quitReason) {
+  log.quitReason = quitReason ?? null;
+  log.endReason = quitReason === 'game_over' ? 'game_over' : 'quit';
+}
+
+export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP, variant }) {
   assertAdapter(adapter);
+  const safetyCap = Number.isInteger(maxSteps) && maxSteps > 0 ? maxSteps : SAFETY_CAP;
   const rng = mulberry32(seed >>> 0);
   const variantId = typeof variant === 'string' ? variant : variant?.id ?? 'default';
   const log = {
@@ -65,6 +73,10 @@ export async function runSession({ adapter, persona, seed, maxSteps = 40, varian
     sessionLengthMs: 0,
     steps: 0,
     endReason: null,
+    quitReason: null,
+    anomaly: null,
+    frustration: 0,
+    movesSinceClear: 0,
     finalScore: 0,
     peakScore: 0,
     clears: 0,
@@ -75,47 +87,70 @@ export async function runSession({ adapter, persona, seed, maxSteps = 40, varian
     retention: null
   };
   let restarts = 0;
-  let misses = 0;
+  let mood = freshMood();
   await adapter.start({ seed, variant, persona: persona.id });
   try {
     let state = await snapshot(adapter);
     observe(log, null, state, 0);
-    while (log.steps < maxSteps && !log.endReason) {
+    while (log.steps < safetyCap && !log.endReason) {
       if (state.ended) {
         log.endReason = 'ended';
         break;
       }
+      const gameOver = await adapter.isGameOver();
       const decision = chooseAction({
         persona,
         state,
         rng,
-        step: log.steps,
+        mood,
+        gameOver: gameOver === true,
+        adCount: log.adMoments.length,
         restarts
       });
+      mood = decision.mood ?? mood;
       const elapsed = thinkTime(persona);
       log.sessionLengthMs += elapsed;
       if (typeof adapter.advanceTime === 'function') await adapter.advanceTime(elapsed);
       applyReaction(log, decision.reaction);
       if (decision.type === 'quit') {
-        log.endReason = 'quit';
+        finishQuit(log, decision.quitReason);
         break;
       }
+      if (decision.type === 'stall') {
+        log.steps += 1;
+        continue;
+      }
       const outcome = await adapter.perform(decision.action);
-      if (decision.action?.uiId === 'restart' || decision.action?.id === 'restart') restarts += 1;
+      const restarted = decision.action?.uiId === 'restart' || decision.action?.id === 'restart';
+      if (restarted) {
+        restarts += 1;
+        mood = tickMood(persona, mood, 'reset');
+      }
       log.steps += 1;
       const next = await snapshot(adapter);
+      if (!restarted && state.failed && !next.failed) mood = tickMood(persona, mood, 'reset');
+      else if (decision.action?.type === 'move') {
+        if (outcome && outcome.ok === false) mood = tickMood(persona, mood, 'failed');
+        else if ((next.clears ?? 0) > (state.clears ?? 0)) mood = tickMood(persona, mood, 'clear');
+        else mood = tickMood(persona, mood, 'move');
+      }
       observe(log, state, next, log.steps);
       state = next;
-      if (outcome && outcome.ok === false) {
-        misses += 1;
-        if (misses >= 3) log.endReason = 'stuck';
-      } else {
-        misses = 0;
+      if (state.ended) {
+        log.endReason = 'ended';
+        log.quitReason = null;
+      } else if (quitReasonForMood(persona, mood) && !(await adapter.isGameOver())) {
+        finishQuit(log, quitReasonForMood(persona, mood));
       }
-      if (state.ended) log.endReason = 'ended';
     }
-    if (!log.endReason) log.endReason = 'max_steps';
+    if (!log.endReason) {
+      log.endReason = 'anomaly';
+      log.anomaly = 'safety_cap';
+      log.quitReason = null;
+    }
   } finally {
+    log.frustration = mood.frustration;
+    log.movesSinceClear = mood.movesSinceClear;
     await adapter.stop();
   }
   log.retention = { wouldReturn: wouldReturn({ persona, log }) };

@@ -14,6 +14,6 @@ export function wouldReturn({ persona, log }) {
   score += Math.min(0.1, (log.peakScore ?? log.finalScore ?? 0) / 500);
   score -= Math.min(0.25, (log.failPoints?.length ?? 0) * 0.07);
   score -= Math.min(0.45, (log.adMoments?.length ?? 0) * 0.08 * (Number.isFinite(aversion) ? aversion : 0));
-  if (log.endReason === 'quit' && (log.steps ?? 0) < (persona?.patience ?? 30)) score -= 0.04;
+  if (log.quitReason === 'frustration' || log.quitReason === 'boredom' || log.quitReason === 'ad') score -= 0.04;
   return round(clamp(score, 0, 1));
 }

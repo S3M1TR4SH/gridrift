@@ -53,6 +53,9 @@ export async function createAdapter({ root = process.cwd() } = {}) {
     async perform(action) {
       return page.evaluate((next) => globalThis.__playerSim.perform(next), action);
     },
+    async isGameOver() {
+      return page.evaluate(() => globalThis.__playerSim.isGameOver() === true);
+    },
     async advanceTime(ms) {
       clockMs += ms;
       await page.clock.setSystemTime(clockMs);

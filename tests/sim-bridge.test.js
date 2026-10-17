@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import tuning from '../config/tuning.json' with { type: 'json' };
 import { createBoard } from '../src/logic.js';
-import { listMoves } from '../src/sim-bridge.js';
+import { detectGameOver, listMoves } from '../src/sim-bridge.js';
 import { validateGameConfig } from '../studio-core/guardrails/validate.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,6 +20,13 @@ test('move listing reports a completing line and leaves the board unchanged', ()
   assert.equal(clear.cells, 1);
   assert.equal(clear.type, 'move');
   assert.deepEqual(board, before);
+});
+
+test('game over is the match phase or the results screen, not an empty tray by itself', () => {
+  assert.equal(detectGameOver('game_over', 'play'), true);
+  assert.equal(detectGameOver('play', 'game_over'), true);
+  assert.equal(detectGameOver('play', 'play'), false);
+  assert.equal(detectGameOver('play', 'ad_break'), false);
 });
 
 test('quiet ad variant stays inside the guardrails', () => {
