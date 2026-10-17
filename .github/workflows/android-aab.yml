@@ -15,7 +15,15 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # v3 still defaults `packages` to `tools platform-tools`. Google no longer
+      # serves `tools`, and there is no unversioned `cmdline-tools` package
+      # either (only ids such as `cmdline-tools;16.0`). This action already
+      # unpacks command-line tools from `cmdline-tools-version` (12266719 is
+      # 16.0) before it installs `packages`, so ask only for platform-tools.
       - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools'
 
       - name: Install Android SDK packages
         run: |
