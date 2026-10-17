@@ -5,6 +5,7 @@ export { formatSummary, writeReport } from './report.js';
 export { wouldReturn } from './retention.js';
 export { mulberry32 } from './rng.js';
 export { runSession, SAFETY_CAP } from './session.js';
+export { sessionNumberForSim, runAdSessions } from './ad-schedule.js';
 export { startStaticServer } from './static-server.js';
 export { createOllamaClient } from './analyze/ollama.js';
 export { runAnalyze } from './analyze/run.js';

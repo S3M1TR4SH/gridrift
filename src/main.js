@@ -517,6 +517,17 @@ function start() {
     persist();
     roundNoticeUntil = performance.now() + roundNotice.dismissMs;
     ui.setRoundNotice(roundNotice.text);
+    const advance = planRoundAdvance({
+      interstitialAllowed: interstitialAllowed('between_rounds')
+    });
+    if (advance === 'ad_then_next') {
+      const result = ads.showInterstitial({ breakType: 'between_rounds' });
+      if (result.shown) {
+        tracker.track('ad_break_shown', { break: 'between_rounds' });
+        show({ screen: 'ad_break', after: 'next_round' });
+        return;
+      }
+    }
     startNextRound();
   }
 
@@ -1023,7 +1034,7 @@ function start() {
       snapX,
       snapY,
       ghostValid,
-      ignore: screen() !== 'play' || shouldIgnoreInput(performance.now(), ignoreUntil)
+      ignore: screen() !== 'play' || roundNotice.blocking || shouldIgnoreInput(performance.now(), ignoreUntil)
     };
   }
 
@@ -1111,7 +1122,7 @@ function start() {
     }, hit);
     pointer = reduced.state;
     if (!reduced.effect || reduced.effect.type === 'select' || reduced.effect.type === 'cancel') {
-      if (reduced.effect?.type === 'cancel' && reduced.effect.moved && Number.isInteger(reduced.effect.index)) {
+      if (dropFeedback(reduced.effect, hit) === 'sfx.invalid' && Number.isInteger(reduced.effect.index)) {
         const piece = match.state.pieces[reduced.effect.index];
         const slot = traySlots(layout)[reduced.effect.index];
         const burst = feedback.invalid({

@@ -32,7 +32,7 @@ test('ad screens keep their actions off the previous button slot', () => {
   const watch = confirm.actions.find((action) => action.id === 'watch');
   assert.equal(decline.slot, offer.slot);
   assert.notEqual(watch.slot, offer.slot);
-  assert.equal(over.actions.some((action) => action.id === 'restart'), true);
+  assert.equal(over.actions.some((action) => action.id === 'ask_restart'), true);
   assert.equal(over.actions.some((action) => action.id === 'close_ad'), false);
   assert.ok(CONTROL_GAP_PX >= LIMITS.ads.minControlSeparationPx);
 });
@@ -56,7 +56,9 @@ test('breaks stay on round boundaries and continue is capped', () => {
   assert.equal(canOfferContinue(0, true), true);
   assert.equal(canOfferContinue(LIMITS.rewardedEffects.maxContinueUsesPerMatch, true), false);
   assert.equal(rowsForContinue(9), LIMITS.rewardedEffects.maxContinueRowsCleared);
-  assert.equal(shouldIgnoreInput(100, 100 + INPUT_GUARD_MS), true);
+  assert.equal(INPUT_GUARD_MS, 0);
+  assert.equal(shouldIgnoreInput(100, 100), false);
+  assert.equal(shouldIgnoreInput(99, 100), true);
   assert.equal(shouldIgnoreInput(500, 100), false);
   assert.throws(() => planBreak({ type: 'on_fail' }));
 });
@@ -101,17 +103,39 @@ test('drag snaps to the grid and a tap selects', () => {
   assert.equal(ignored.effect.moved, false);
 });
 
+test('a second drag is accepted immediately', () => {
+  let state = createPointerState();
+  state = pointerReducer(state, { type: 'down', pointerId: 1, x: 10, y: 10 }, {
+    trayIndex: 0, trayFilled: true, overBoard: false, ghostValid: false, ignore: false
+  }).state;
+  state = pointerReducer(state, { type: 'up', pointerId: 1, x: 12, y: 11 }, {
+    trayIndex: 0, overBoard: false, ghostValid: false, ignore: false
+  }).state;
+  const second = pointerReducer(state, { type: 'down', pointerId: 2, x: 80, y: 10 }, {
+    trayIndex: 1,
+    trayFilled: true,
+    overBoard: false,
+    ghostValid: false,
+    ignore: shouldIgnoreInput(200, 200 + INPUT_GUARD_MS)
+  });
+  assert.equal(second.state.drag.index, 1);
+});
+
 test('game over offers an opt-in continue once and always offers restart', () => {
   const over = viewModel({ screen: 'game_over', rewarded: true, score: 40, bestStreak: 3 });
-  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'restart']);
+  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'ask_restart']);
   const reward = over.actions.find((action) => action.id === 'offer_continue');
   assert.match(reward.label, /Watch ad: clear 3 rows/);
   assert.equal(reward.primary, false);
-  assert.equal(over.actions.find((action) => action.id === 'restart').primary, true);
+  assert.equal(over.actions.find((action) => action.id === 'ask_restart').primary, true);
   assert.equal(over.separated, false);
-  assert.equal(over.actions.find((action) => action.id === 'restart').label, 'Restart');
+  assert.equal(over.actions.find((action) => action.id === 'ask_restart').label, 'Restart');
   const spent = viewModel({ screen: 'game_over', rewarded: false, score: 40, bestStreak: 3 });
-  assert.deepEqual(spent.actions.map((action) => action.id), ['restart']);
+  assert.deepEqual(spent.actions.map((action) => action.id), ['ask_restart']);
+  const restart = viewModel({ screen: 'restart_confirm', bestScore: 40 });
+  assert.match(restart.body, /Back to Round 1/);
+  assert.match(restart.body, /Best 40 kept/);
+  assert.equal(restart.actions.find((action) => action.id === 'restart').label, 'Back to Round 1');
   assert.equal(canOfferContinue(0, true), true);
   assert.equal(canOfferContinue(1, true), false);
   assert.equal(canOfferContinue(0, false), false);
@@ -142,7 +166,7 @@ test('reroll and double score are opt-in and once each', () => {
   });
   assert.ok(doubled.actions.some((action) => action.id === 'offer_continue'));
   assert.ok(doubled.actions.some((action) => action.id === 'offer_double'));
-  assert.ok(doubled.actions.some((action) => action.id === 'restart'));
+  assert.ok(doubled.actions.some((action) => action.id === 'ask_restart'));
   const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'reroll' });
   assert.match(confirm.body, /new tray/i);
   assert.equal(confirm.actions.find((action) => action.id === 'decline').label, 'No thanks');

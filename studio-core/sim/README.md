@@ -52,7 +52,7 @@ It diffs successive states:
 - A fail point when `failed` turns on, with score, clears, and screen.
 - An ad moment when `ad` changes. The persona reaction is `close`, `watch`, `decline`, or `quit`.
 - Session length as the sum of `thinkMs` (simulated time, not wall clock).
-- A would-return score from 0 to 1. Clears, combos, and peak score raise it. Fail points lower it. Each ad moment lowers it by `0.08 * adAversion`, capped at 0.45. A frustration, boredom, or ad quit subtracts 0.04.
+- A would-return score from 0 to 1. The formula has no clear, combo, or score cap. It is `0.28 + 0.20 * log1p(sessionSeconds) / log1p(90) + 0.18 * log1p(clears) / log1p(20) + 0.12 * log1p(nearMisses) / log1p(6) + 0.14 * log1p(voluntaryReplays) / log1p(2) - 0.05 * log1p(failPoints) / log1p(4) - 0.12 * (adMoments * adAversion) / (1 + adMoments * adAversion)`, then minus `0.05` for a frustration, boredom, or ad quit. Only the final value is clamped to 0..1, so a longer session or another clear still moves it. Near-misses are boards with a row or column one cell from full. Voluntary replays are restarts the persona chose.
 - `quitReason` on every session: `frustration`, `boredom`, `ad`, `game_over`, or `null`. `anomaly` is `safety_cap` when the safety cap stops the session. That cap is not a quit reason.
 
 The session ends when the persona quits, when the adapter reports game over and they leave, when `ended` is set, or at the safety cap. The cap is high and is reported as an anomaly.

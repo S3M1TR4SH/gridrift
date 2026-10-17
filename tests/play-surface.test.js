@@ -4,20 +4,23 @@ import pacing from '../config/pacing.json' with { type: 'json' };
 import tuning from '../config/tuning.json' with { type: 'json' };
 import { createFeedback } from '../studio-core/index.js';
 import { PERSONAS, chooseAction } from '../studio-core/sim/index.js';
-import { agePrompt, bootScreen, continueRewardLabel } from '../src/flow.js';
+import { AGE_COPY, agePrompt, bootScreen, continueRewardLabel, viewModel } from '../src/flow.js';
 import { computeLayout, traySlots } from '../src/layout.js';
 import { createMatch, fitsAnywhere, SHAPES } from '../src/logic.js';
 import { coachMarks, openingBoard, wordCount } from '../src/onboarding.js';
 import { mulberry32 } from '../src/rng.js';
 import { listMoves } from '../src/sim-bridge.js';
 
-test('launch can accept a move immediately and age stays one light prompt', () => {
-  assert.equal(bootScreen(), 'play');
-  const prompt = agePrompt(null);
-  assert.equal(prompt.blocking, false);
-  assert.ok(prompt.actions.some((action) => action.id === 'age_under'));
-  assert.ok(prompt.actions.some((action) => action.id === 'age_13'));
-  assert.equal(agePrompt({ isChild: true }), null);
+test('launch asks for a birth year before play', () => {
+  assert.equal(bootScreen(), 'age_gate');
+  assert.equal(bootScreen({ birthYear: 2000, needsAnalyticsPrompt: true }), 'stats_consent');
+  assert.equal(bootScreen({ birthYear: 2000, needsAnalyticsPrompt: false }), 'play');
+  assert.equal(agePrompt(null), null);
+  const gate = viewModel({ screen: 'age_gate' });
+  assert.equal(gate.title, AGE_COPY);
+  assert.equal(gate.title, 'What year were you born?');
+  assert.equal(gate.actions.length, 0);
+  assert.doesNotMatch(`${gate.title} ${gate.body}`, /under 13|ads|unlock/i);
   assert.ok(continueRewardLabel(tuning.continueClears).includes('clear 3 rows'));
 });
 
@@ -77,12 +80,17 @@ test('portrait layout fills the width and tray slots stay fixed', () => {
   assert.deepEqual(slots.map((slot) => slot.x), [0, slots[0].w, slots[0].w * 2]);
   assert.equal(slots[0].y, slots[2].y);
   const filled = computeLayout({ width: 390, height: 844, grid: 6, playHeight: 640 });
-  assert.equal(filled.canvasHeight, 640);
+  assert.equal(filled.canvasHeight, filled.boardSize + filled.gap + filled.trayHeight);
+  assert.equal(filled.trayTop, filled.boardSize + filled.gap);
   assert.ok(filled.cell >= 40);
   assert.ok(filled.canvasWidth <= 390);
   const filledSlots = traySlots(filled);
+  assert.equal(filledSlots[0].y, filled.boardSize + filled.gap);
   assert.equal(filledSlots[0].y + filledSlots[0].h, filled.canvasHeight);
-  assert.ok(filledSlots[0].y > filled.boardSize);
+  const wide = computeLayout({ width: 1400, height: 900, grid: 8 });
+  assert.ok(wide.boardSize <= 560);
+  assert.equal(wide.canvasWidth, wide.boardSize);
+  assert.equal(wide.cell, Math.floor(560 / 8));
 });
 
 test('an invalid drop shakes and names sfx.invalid, and a streak of 2 pops up', () => {
@@ -106,6 +114,8 @@ test('an invalid drop shakes and names sfx.invalid, and a streak of 2 pops up', 
   assert.equal(pacing.difficulty.failBias, 0);
   assert.equal(pacing.difficulty.forceUnplaceable, false);
   assert.equal(pacing.difficulty.allowStuckState, false);
-  assert.equal(pacing.ads.interstitial.enabled, false);
-  assert.equal(pacing.ads.rewarded.enabled, false);
+  assert.equal(pacing.ads.testMode, true);
+  assert.equal(pacing.ads.interstitial.enabled, true);
+  assert.equal(pacing.ads.rewarded.enabled, true);
+  assert.ok(pacing.ads.interstitial.minSecondsBetween >= 120);
 });

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { resolve } from 'node:path';
-import { startStaticServer } from '../studio-core/sim/index.js';
+import { sessionNumberForSim, startStaticServer } from '../studio-core/sim/index.js';
 
 const PACING_URL = '/config/pacing.json';
 const TUNING_URL = '/config/tuning.json';
@@ -35,6 +35,15 @@ export async function createAdapter({ root = process.cwd() } = {}) {
       clockMs = 1_700_000_000_000 + (Number(seed) * 60_000);
       await page.clock.install({ time: clockMs });
       await page.clock.pauseAt(clockMs);
+      const sessionNumber = sessionNumberForSim({ variant, seed });
+      await page.addInitScript((count) => {
+        const key = 'gridrift.run.v1';
+        localStorage.setItem(key, JSON.stringify({
+          sessions: Math.max(0, Number(count) - 1),
+          tutorialSeen: Number(count) > 1,
+          bestScore: 0
+        }));
+      }, sessionNumber);
       await page.goto(`${server.url}/?sim=1`, { waitUntil: 'domcontentloaded' });
       try {
         await page.waitForFunction(() => globalThis.__playerSim?.ready === true, null, { timeout: 15000 });

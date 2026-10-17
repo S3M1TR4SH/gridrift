@@ -31,6 +31,7 @@ function observe(log, prev, state, step) {
       screen: state.screen ?? ''
     });
   }
+  if (state.nearMiss && !prev?.nearMiss) log.nearMisses += 1;
   if (state.ad && !sameAd(prev?.ad, state.ad)) {
     log.adMoments.push({
       step,
@@ -84,6 +85,8 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
     combos: [],
     failPoints: [],
     adMoments: [],
+    nearMisses: 0,
+    replays: 0,
     retention: null
   };
   let restarts = 0;
@@ -127,6 +130,7 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
       const restarted = decision.action?.uiId === 'restart' || decision.action?.id === 'restart';
       if (restarted) {
         restarts += 1;
+        log.replays += 1;
         lastMove = null;
         mood = tickMood(persona, mood, 'reset');
       }

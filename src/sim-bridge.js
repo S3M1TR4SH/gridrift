@@ -84,14 +84,35 @@ export function listMoves(board, pieces, { lookahead = 2 } = {}) {
   return moves;
 }
 
-function currentAd(view, rewardKind, breakAfter) {
-  if (view.screen === 'ad_break') {
+export function boardNearMiss(board) {
+  if (!board?.length) return false;
+  const size = board.length;
+  for (let index = 0; index < size; index += 1) {
+    if (board[index].filter((cell) => !cell).length === 1) return true;
+    let empty = 0;
+    for (let y = 0; y < size; y += 1) if (!board[y][index]) empty += 1;
+    if (empty === 1) return true;
+  }
+  return false;
+}
+
+const OFFER_PLACEMENT = {
+  offer_continue: 'continue',
+  offer_hint: 'hint',
+  offer_reroll: 'reroll',
+  offer_double: 'double_score'
+};
+
+export function describeAd(view, rewardKind, breakAfter) {
+  if (view?.screen === 'ad_break') {
     return { kind: 'interstitial', screen: 'ad_break', placement: breakAfter || 'interstitial' };
   }
-  if (view.screen === 'rewarded_confirm' || view.screen === 'rewarded_play') {
+  if (view?.screen === 'rewarded_confirm' || view?.screen === 'rewarded_play') {
     return { kind: 'rewarded', screen: view.screen, placement: rewardKind || 'rewarded' };
   }
-  return null;
+  const offer = (view?.actions || []).find((action) => OFFER_PLACEMENT[action.id]);
+  if (!offer) return null;
+  return { kind: 'rewarded', screen: view.screen || '', placement: OFFER_PLACEMENT[offer.id] };
 }
 
 export function detectGameOver(phase, screen) {
@@ -134,7 +155,8 @@ export function attachSimBridge(api) {
       failed: match.phase === 'game_over' || view.screen === 'game_over',
       gameOver: detectGameOver(match.phase, view.screen),
       ended: false,
-      ad: currentAd(view, api.getRewardKind(), api.getBreak()),
+      nearMiss: boardNearMiss(match.board),
+      ad: describeAd({ ...view, actions }, api.getRewardKind(), api.getBreak()),
       actions,
       round: api.getRound()
     };
