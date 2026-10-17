@@ -1,0 +1,364 @@
+import { LIMITS } from './limits.js';
+
+const SECRET_KEYS = new Set([
+  'adunitid',
+  'ad_unit_id',
+  'sdkkey',
+  'sdk_key',
+  'apikey',
+  'api_key',
+  'clientsecret',
+  'client_secret',
+  'trackingurl',
+  'tracking_url',
+  'endpoint',
+  'beacon',
+  'beaconurl',
+  'beacon_url'
+]);
+
+function violation(rule, message, value) {
+  return { rule, message, value };
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function findUnsafeLiterals(value, path = '$') {
+  const violations = [];
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      violations.push(...findUnsafeLiterals(item, `${path}[${index}]`));
+    });
+    return violations;
+  }
+  if (!isPlainObject(value)) {
+    if (typeof value === 'string' && /^https?:\/\//i.test(value)) {
+      violations.push(violation('privacy.network', `${path} is an absolute URL`, value));
+    }
+    return violations;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const normalized = key.toLowerCase().replace(/-/g, '');
+    const here = `${path}.${key}`;
+    if (SECRET_KEYS.has(key.toLowerCase()) || SECRET_KEYS.has(normalized)) {
+      violations.push(violation('ads.secret', `${here} is not allowed`, key));
+    }
+    violations.push(...findUnsafeLiterals(child, here));
+  }
+  return violations;
+}
+
+function expectBoolean(violations, value, rule, message) {
+  if (typeof value !== 'boolean') {
+    violations.push(violation(rule, message, value));
+    return false;
+  }
+  return true;
+}
+
+function expectNumber(violations, value, rule, message) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    violations.push(violation(rule, message, value));
+    return false;
+  }
+  return true;
+}
+
+function validateInterstitial(interstitial, violations) {
+  if (!isPlainObject(interstitial)) {
+    violations.push(violation('ads.interstitial', 'interstitial config is required', interstitial));
+    return;
+  }
+  const allowed = new Set([
+    'enabled',
+    'breaks',
+    'minSecondsBetween',
+    'minRoundsBetween',
+    'maxPerSession',
+    'nearControls',
+    'controlSeparationPx'
+  ]);
+  for (const key of Object.keys(interstitial)) {
+    if (!allowed.has(key)) {
+      violations.push(violation('ads.unexpected', `unexpected interstitial field ${key}`, key));
+    }
+  }
+  expectBoolean(violations, interstitial.enabled, 'ads.interstitial', 'interstitial.enabled must be boolean');
+  if (!Array.isArray(interstitial.breaks) || interstitial.breaks.length === 0) {
+    violations.push(violation('ads.break', 'at least one natural break is required', interstitial.breaks));
+  } else {
+    for (const type of interstitial.breaks) {
+      if (!LIMITS.ads.allowedBreaks.includes(type)) {
+        violations.push(violation('ads.break', `break "${type}" is not a natural break`, type));
+      }
+    }
+  }
+  if (expectNumber(violations, interstitial.maxPerSession, 'ads.maxPerSession', 'maxPerSession is required')) {
+    if (interstitial.maxPerSession > LIMITS.ads.maxPerSession || interstitial.maxPerSession < 0) {
+      violations.push(violation(
+        'ads.maxPerSession',
+        `maxPerSession cannot exceed ${LIMITS.ads.maxPerSession}`,
+        interstitial.maxPerSession
+      ));
+    }
+  }
+  if (expectNumber(violations, interstitial.minSecondsBetween, 'ads.minSecondsBetween', 'minSecondsBetween is required')) {
+    if (interstitial.minSecondsBetween < LIMITS.ads.minSecondsBetween) {
+      violations.push(violation(
+        'ads.minSecondsBetween',
+        `minSecondsBetween cannot be under ${LIMITS.ads.minSecondsBetween}`,
+        interstitial.minSecondsBetween
+      ));
+    }
+  }
+  if (expectNumber(violations, interstitial.minRoundsBetween, 'ads.minRoundsBetween', 'minRoundsBetween is required')) {
+    if (interstitial.minRoundsBetween < LIMITS.ads.minRoundsBetween) {
+      violations.push(violation(
+        'ads.minRoundsBetween',
+        `minRoundsBetween cannot be under ${LIMITS.ads.minRoundsBetween}`,
+        interstitial.minRoundsBetween
+      ));
+    }
+  }
+  if (expectBoolean(violations, interstitial.nearControls, 'ads.nearControls', 'nearControls must be false')) {
+    if (interstitial.nearControls) {
+      violations.push(violation('ads.nearControls', 'ads cannot sit near controls', true));
+    }
+  }
+  if (expectNumber(violations, interstitial.controlSeparationPx, 'ads.controlSeparationPx', 'controlSeparationPx is required')) {
+    if (interstitial.controlSeparationPx < LIMITS.ads.minControlSeparationPx) {
+      violations.push(violation(
+        'ads.controlSeparationPx',
+        `control gap must be at least ${LIMITS.ads.minControlSeparationPx}px`,
+        interstitial.controlSeparationPx
+      ));
+    }
+  }
+}
+
+function validateRewarded(rewarded, violations) {
+  if (!isPlainObject(rewarded)) {
+    violations.push(violation('ads.rewarded', 'rewarded config is required', rewarded));
+    return;
+  }
+  const allowed = new Set(['enabled', 'optInOnly', 'placements', 'maxPerSession', 'minSecondsBetween']);
+  for (const key of Object.keys(rewarded)) {
+    if (!allowed.has(key)) {
+      violations.push(violation('ads.unexpected', `unexpected rewarded field ${key}`, key));
+    }
+  }
+  expectBoolean(violations, rewarded.enabled, 'ads.rewarded', 'rewarded.enabled must be boolean');
+  if (expectBoolean(violations, rewarded.optInOnly, 'ads.rewardedOptIn', 'optInOnly is required')) {
+    if (!rewarded.optInOnly) {
+      violations.push(violation('ads.rewardedOptIn', 'rewarded ads are opt-in only', rewarded.optInOnly));
+    }
+  }
+  if (!Array.isArray(rewarded.placements) || rewarded.placements.length === 0) {
+    violations.push(violation('ads.rewardedPlacement', 'rewarded placements are required', rewarded.placements));
+  } else {
+    for (const placement of rewarded.placements) {
+      if (!LIMITS.ads.rewarded.placements.includes(placement)) {
+        violations.push(violation('ads.rewardedPlacement', `placement "${placement}" is not allowed`, placement));
+      }
+    }
+  }
+  if (expectNumber(violations, rewarded.maxPerSession, 'ads.rewardedMaxPerSession', 'rewarded maxPerSession is required')) {
+    if (rewarded.maxPerSession > LIMITS.ads.rewarded.maxPerSession || rewarded.maxPerSession < 0) {
+      violations.push(violation(
+        'ads.rewardedMaxPerSession',
+        `rewarded maxPerSession cannot exceed ${LIMITS.ads.rewarded.maxPerSession}`,
+        rewarded.maxPerSession
+      ));
+    }
+  }
+  if (expectNumber(violations, rewarded.minSecondsBetween, 'ads.rewardedMinSeconds', 'rewarded minSecondsBetween is required')) {
+    if (rewarded.minSecondsBetween < LIMITS.ads.rewarded.minSecondsBetween) {
+      violations.push(violation(
+        'ads.rewardedMinSeconds',
+        `rewarded minSecondsBetween cannot be under ${LIMITS.ads.rewarded.minSecondsBetween}`,
+        rewarded.minSecondsBetween
+      ));
+    }
+  }
+}
+
+function validateDifficulty(difficulty, violations) {
+  if (!isPlainObject(difficulty)) {
+    violations.push(violation('difficulty.required', 'difficulty config is required', difficulty));
+    return;
+  }
+  const allowed = new Set([
+    'failBias',
+    'forceUnplaceable',
+    'allowStuckState',
+    'rampEveryClears',
+    'maxTier',
+    'pools'
+  ]);
+  for (const key of Object.keys(difficulty)) {
+    if (!allowed.has(key)) {
+      violations.push(violation('difficulty.unexpected', `unexpected difficulty field ${key}`, key));
+    }
+  }
+  if (expectNumber(violations, difficulty.failBias, 'difficulty.failBias', 'failBias is required')) {
+    if (difficulty.failBias > LIMITS.difficulty.maxFailBias) {
+      violations.push(violation('difficulty.failBias', 'fail bias must stay at 0', difficulty.failBias));
+    }
+  }
+  if (expectBoolean(violations, difficulty.forceUnplaceable, 'difficulty.forceUnplaceable', 'forceUnplaceable is required')) {
+    if (difficulty.forceUnplaceable) {
+      violations.push(violation('difficulty.forceUnplaceable', 'forced unplaceable pieces are not allowed', true));
+    }
+  }
+  if (expectBoolean(violations, difficulty.allowStuckState, 'difficulty.stuckState', 'allowStuckState is required')) {
+    if (difficulty.allowStuckState) {
+      violations.push(violation('difficulty.stuckState', 'stuck states are not allowed', true));
+    }
+  }
+  if (expectNumber(violations, difficulty.rampEveryClears, 'difficulty.rampEveryClears', 'rampEveryClears is required')) {
+    if (difficulty.rampEveryClears < 1) {
+      violations.push(violation('difficulty.rampEveryClears', 'rampEveryClears must be at least 1', difficulty.rampEveryClears));
+    }
+  }
+  if (expectNumber(violations, difficulty.maxTier, 'difficulty.maxTier', 'maxTier is required')) {
+    if (difficulty.maxTier > LIMITS.difficulty.maxTier || difficulty.maxTier < 0) {
+      violations.push(violation('difficulty.maxTier', `maxTier cannot exceed ${LIMITS.difficulty.maxTier}`, difficulty.maxTier));
+    }
+  }
+  if (!Array.isArray(difficulty.pools) || difficulty.pools.length === 0) {
+    violations.push(violation('difficulty.pools', 'at least one shape pool is required', difficulty.pools));
+  } else {
+    for (const pool of difficulty.pools) {
+      if (!isPlainObject(pool) || typeof pool.minTier !== 'number' || !Array.isArray(pool.shapes) || pool.shapes.length === 0) {
+        violations.push(violation('difficulty.pools', 'each pool needs minTier and shapes', pool));
+      }
+    }
+  }
+}
+
+function validatePrivacy(privacy, violations) {
+  if (!isPlainObject(privacy)) {
+    violations.push(violation('privacy.required', 'privacy config is required', privacy));
+    return;
+  }
+  const allowed = new Set([
+    'childrenAdsAllowed',
+    'childrenAnalyticsAllowed',
+    'personalizedAds',
+    'network'
+  ]);
+  for (const key of Object.keys(privacy)) {
+    if (!allowed.has(key)) {
+      violations.push(violation('privacy.unexpected', `unexpected privacy field ${key}`, key));
+    }
+  }
+  if (expectBoolean(violations, privacy.childrenAdsAllowed, 'privacy.childrenAds', 'childrenAdsAllowed is required')) {
+    if (privacy.childrenAdsAllowed) {
+      violations.push(violation('privacy.childrenAds', 'children cannot be shown ads', true));
+    }
+  }
+  if (expectBoolean(violations, privacy.childrenAnalyticsAllowed, 'privacy.childrenAnalytics', 'childrenAnalyticsAllowed is required')) {
+    if (privacy.childrenAnalyticsAllowed) {
+      violations.push(violation('privacy.childrenAnalytics', 'children cannot be tracked', true));
+    }
+  }
+  if (expectBoolean(violations, privacy.personalizedAds, 'privacy.personalizedAds', 'personalizedAds is required')) {
+    if (privacy.personalizedAds) {
+      violations.push(violation('privacy.personalizedAds', 'personalized ads are not allowed', true));
+    }
+  }
+  if (expectBoolean(violations, privacy.network, 'privacy.network', 'network is required')) {
+    if (privacy.network) {
+      violations.push(violation('privacy.network', 'config cannot enable network calls', true));
+    }
+  }
+}
+
+function validateAds(ads, violations) {
+  if (!isPlainObject(ads)) {
+    violations.push(violation('ads.required', 'ads config is required', ads));
+    return;
+  }
+  const allowed = new Set(['interstitial', 'rewarded', 'personalized']);
+  for (const key of Object.keys(ads)) {
+    if (!allowed.has(key)) {
+      violations.push(violation('ads.unexpected', `unexpected ads field ${key}`, key));
+    }
+  }
+  if (expectBoolean(violations, ads.personalized, 'ads.personalized', 'ads.personalized is required')) {
+    if (ads.personalized) {
+      violations.push(violation('ads.personalized', 'personalized ads are not allowed', true));
+    }
+  }
+  validateInterstitial(ads.interstitial, violations);
+  validateRewarded(ads.rewarded, violations);
+}
+
+export function validateTuning(tuning) {
+  const violations = [];
+  if (!isPlainObject(tuning)) {
+    return { ok: false, violations: [violation('tuning.required', 'tuning config is required', tuning)] };
+  }
+  violations.push(...findUnsafeLiterals(tuning, '$.tuning'));
+  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score']);
+  for (const key of Object.keys(tuning)) {
+    if (!allowed.has(key)) violations.push(violation('tuning.unexpected', `unexpected tuning field ${key}`, key));
+  }
+  if (typeof tuning.grid !== 'number' || tuning.grid < 6 || tuning.grid > 12) {
+    violations.push(violation('tuning.grid', 'grid must be from 6 to 12', tuning.grid));
+  }
+  if (typeof tuning.traySize !== 'number' || tuning.traySize < 1 || tuning.traySize > 3) {
+    violations.push(violation('tuning.traySize', 'traySize must be from 1 to 3', tuning.traySize));
+  }
+  if (typeof tuning.continueClears !== 'number') {
+    violations.push(violation('tuning.continueClears', 'continueClears is required', tuning.continueClears));
+  } else if (
+    tuning.continueClears < 1 ||
+    tuning.continueClears > LIMITS.rewardedEffects.maxContinueRowsCleared
+  ) {
+    violations.push(violation(
+      'tuning.continueClears',
+      `continue cannot clear more than ${LIMITS.rewardedEffects.maxContinueRowsCleared} rows`,
+      tuning.continueClears
+    ));
+  }
+  if (!Array.isArray(tuning.levelOrder) || tuning.levelOrder.length === 0) {
+    violations.push(violation('tuning.levelOrder', 'levelOrder is required', tuning.levelOrder));
+  }
+  const score = tuning.score;
+  if (!isPlainObject(score)) {
+    violations.push(violation('tuning.score', 'score tuning is required', score));
+  } else {
+    for (const key of ['place', 'line', 'comboBonusPerExtraLine', 'streakMultiplierStep', 'maxStreakMultiplier']) {
+      if (typeof score[key] !== 'number' || score[key] < 0) {
+        violations.push(violation('tuning.score', `score.${key} must be a non-negative number`, score[key]));
+      }
+    }
+  }
+  return { ok: violations.length === 0, violations };
+}
+
+export function validatePacing(pacing) {
+  const violations = [];
+  if (!isPlainObject(pacing)) {
+    return { ok: false, violations: [violation('pacing.required', 'pacing config is required', pacing)] };
+  }
+  violations.push(...findUnsafeLiterals(pacing, '$.pacing'));
+  const allowed = new Set(['ads', 'difficulty', 'privacy']);
+  for (const key of Object.keys(pacing)) {
+    if (!allowed.has(key)) violations.push(violation('pacing.unexpected', `unexpected pacing field ${key}`, key));
+  }
+  validateAds(pacing.ads, violations);
+  validateDifficulty(pacing.difficulty, violations);
+  validatePrivacy(pacing.privacy, violations);
+  return { ok: violations.length === 0, violations };
+}
+
+export function validateGameConfig({ pacing, tuning } = {}) {
+  const pacingResult = validatePacing(pacing);
+  const tuningResult = validateTuning(tuning);
+  const violations = [...pacingResult.violations, ...tuningResult.violations];
+  return { ok: violations.length === 0, violations };
+}

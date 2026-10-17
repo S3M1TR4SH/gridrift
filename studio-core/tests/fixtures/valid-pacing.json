@@ -1,0 +1,38 @@
+{
+  "ads": {
+    "personalized": false,
+    "interstitial": {
+      "enabled": true,
+      "breaks": ["between_rounds", "game_over"],
+      "minSecondsBetween": 120,
+      "minRoundsBetween": 2,
+      "maxPerSession": 2,
+      "nearControls": false,
+      "controlSeparationPx": 96
+    },
+    "rewarded": {
+      "enabled": true,
+      "optInOnly": true,
+      "placements": ["continue", "hint"],
+      "maxPerSession": 2,
+      "minSecondsBetween": 90
+    }
+  },
+  "difficulty": {
+    "failBias": 0,
+    "forceUnplaceable": false,
+    "allowStuckState": false,
+    "rampEveryClears": 4,
+    "maxTier": 5,
+    "pools": [
+      { "minTier": 0, "shapes": ["dot", "line2", "square"] },
+      { "minTier": 2, "shapes": ["line3", "l", "t"] }
+    ]
+  },
+  "privacy": {
+    "childrenAdsAllowed": false,
+    "childrenAnalyticsAllowed": false,
+    "personalizedAds": false,
+    "network": false
+  }
+}

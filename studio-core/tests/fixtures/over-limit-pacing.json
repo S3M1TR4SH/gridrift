@@ -1,0 +1,37 @@
+{
+  "ads": {
+    "personalized": true,
+    "apiKey": "not-a-real-key",
+    "interstitial": {
+      "enabled": true,
+      "breaks": ["on_fail", "gameplay"],
+      "minSecondsBetween": 5,
+      "minRoundsBetween": 0,
+      "maxPerSession": 50,
+      "nearControls": true,
+      "controlSeparationPx": 8
+    },
+    "rewarded": {
+      "enabled": true,
+      "optInOnly": false,
+      "placements": ["continue", "forced_banner"],
+      "maxPerSession": 20,
+      "minSecondsBetween": 1
+    }
+  },
+  "difficulty": {
+    "failBias": 0.75,
+    "forceUnplaceable": true,
+    "allowStuckState": true,
+    "rampEveryClears": 1,
+    "maxTier": 99,
+    "pools": [{ "minTier": 0, "shapes": ["dot"] }]
+  },
+  "privacy": {
+    "childrenAdsAllowed": true,
+    "childrenAnalyticsAllowed": true,
+    "personalizedAds": true,
+    "network": true,
+    "endpoint": "https://ads.example.com/collect"
+  }
+}

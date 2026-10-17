@@ -1,0 +1,29 @@
+{
+  "name": "Gridrift",
+  "shortName": "Gridrift",
+  "description": "Place pieces, clear lines, and keep the grid drifting.",
+  "startUrl": "./",
+  "scope": "./",
+  "themeColor": "#12141c",
+  "backgroundColor": "#12141c",
+  "icons": [
+    {
+      "src": "branding/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "branding/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "branding/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
