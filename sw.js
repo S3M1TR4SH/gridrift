@@ -1,6 +1,10 @@
 import { CACHE_NAME, PRECACHE_URLS } from './src/precache.js';
 import { registerRoutes } from './studio-core/pwa/sw.js';
 
+if (CACHE_NAME !== 'gridrift-0.1.7') {
+  throw new Error('shell cache mismatch');
+}
+
 if (typeof ServiceWorkerGlobalScope !== 'undefined') {
   registerRoutes(self, {
     cacheName: CACHE_NAME,

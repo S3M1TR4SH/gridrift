@@ -13,6 +13,10 @@ test('the shipped manifest keeps the asset-library pin and string ids', () => {
   assert.equal(raw.includes('https://'), false);
   assert.equal(manifest.library.repo, 'S3M1TR4SH/asset-library');
   assert.equal(manifest.library.tag, 'v0.2.0');
+  for (const id of ['sfx.clear', 'sfx.combo', 'sfx.streak.1', 'sfx.streak.2', 'sfx.streak.3', 'sfx.invalid', 'sfx.tutorial.step', 'sfx.ui.tap', 'fx.flash']) {
+    assert.ok(manifest.assets.includes(id), id);
+  }
+  for (let i = 1; i <= 8; i += 1) assert.ok(manifest.assets.includes(`fx.particle.${i}`));
   assert.ok(manifest.assets.includes('sfx.place'));
   assert.ok(manifest.assets.includes('icon.gridrift.icon-192'));
   assert.ok(manifest.assets.includes('icon.gridrift.icon-512'));
@@ -29,6 +33,11 @@ test('missing library files resolve to drawn placeholders', () => {
     assert.notEqual(asset.kind, 'unknown', id);
   }
   assert.equal(registry.get('sfx.place').synth, 'place');
+  assert.equal(registry.get('sfx.clear').synth, 'clear');
+  assert.equal(registry.get('sfx.streak.3').synth, 'streak3');
+  assert.equal(registry.get('fx.particle.1').grayscale, true);
+  assert.equal(registry.get('fx.particle.8').kind, 'fx');
+  assert.equal(registry.get('fx.flash').draw, 'flash');
   assert.equal(registry.get('tile.blue').draw, 'rounded-cell');
   assert.equal(registry.get('font.kenney-future').family.includes('system-ui'), true);
   assert.equal(registry.tileIds().includes('tile.back.01'), false);

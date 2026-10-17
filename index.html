@@ -15,16 +15,27 @@
   <div id="app">
     <header>
       <h1 id="title">Gridrift</h1>
+      <p id="goal" class="goal">Clear 4 lines</p>
       <div class="stats">
         <span>Score <b id="score">0</b></span>
+        <span>Best <b id="best">0</b></span>
         <span>Streak <b id="streak">0</b></span>
         <span id="round">Round</span>
-        <span>Clears <b id="clears">0/0</b></span>
+        <span>Lines <b id="clears">0/0</b></span>
         <span id="combo" hidden></span>
+        <span id="hint-note" hidden></span>
+      </div>
+      <div id="streak-meter" class="streak-meter" role="meter" aria-label="Streak" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0">
+        <span id="streak-fill"></span>
       </div>
       <div class="header-actions">
         <button type="button" id="hint" class="quiet" hidden>Hint</button>
+        <button type="button" id="reroll" class="quiet" hidden>Reroll</button>
+        <button type="button" id="daily" class="quiet" aria-pressed="false">Daily</button>
+        <button type="button" id="motion" class="quiet" aria-pressed="false">Motion</button>
+        <button type="button" id="haptics" class="quiet" aria-pressed="true">Haptics</button>
         <button type="button" id="install" class="quiet" hidden>Install</button>
+        <button type="button" id="stats-opt-out" class="quiet" hidden>Stop stats</button>
         <button type="button" id="mute" class="quiet" aria-pressed="false">Mute</button>
       </div>
     </header>

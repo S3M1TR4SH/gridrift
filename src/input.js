@@ -7,12 +7,12 @@ export function createPointerState() {
 export function pointerReducer(state, event, hit) {
   if (hit.ignore) {
     if (event.type === 'up' || event.type === 'cancel') {
-      return { state: { ...state, drag: null }, effect: { type: 'cancel' } };
+      return { state: { ...state, drag: null }, effect: { type: 'cancel', moved: false } };
     }
     return { state, effect: null };
   }
   if (event.type === 'down') {
-    if (hit.trayIndex >= 0) {
+    if (hit.trayIndex >= 0 && hit.trayFilled !== false) {
       return {
         state: {
           ...state,
@@ -69,7 +69,9 @@ export function pointerReducer(state, event, hit) {
     if (!state.drag || state.drag.pointerId !== event.pointerId) return { state, effect: null };
     const drag = state.drag;
     const cleared = { ...state, drag: null };
-    if (event.type === 'cancel') return { state: cleared, effect: { type: 'cancel' } };
+    if (event.type === 'cancel') {
+      return { state: cleared, effect: { type: 'cancel', moved: Boolean(drag.moved), index: drag.index } };
+    }
     if (!drag.moved) {
       return {
         state: { ...cleared, selected: drag.index },
@@ -82,7 +84,7 @@ export function pointerReducer(state, event, hit) {
         effect: { type: 'place', index: drag.index, x: hit.snapX, y: hit.snapY }
       };
     }
-    return { state: cleared, effect: { type: 'cancel' } };
+    return { state: cleared, effect: { type: 'cancel', moved: true, index: drag.index } };
   }
   return { state, effect: null };
 }

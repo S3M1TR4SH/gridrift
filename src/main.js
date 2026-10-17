@@ -1,7 +1,10 @@
 import assetManifest from '../assets.manifest.json' with { type: 'json' };
 import brand from '../branding/brand.json' with { type: 'json' };
+import analyticsConfig from '../config/analytics.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
+import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
+import { createMixpanelAdapter } from '../studio-core/analytics/adapters/mixpanel.js';
 import { createTracker } from '../studio-core/analytics/tracker.js';
 import {
   applyAnalyticsChoice,
@@ -10,13 +13,19 @@ import {
   memoryStorage
 } from '../studio-core/consent/age-gate.js';
 import { validateGameConfig, validateTuning } from '../studio-core/guardrails/validate.js';
+import { celebrationLevel, createFeedback } from '../studio-core/juice/feedback.js';
+import { createGuardedAds } from '../studio-core/ads/guard.js';
 import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
 import { createInstallController } from '../studio-core/pwa/install.js';
 import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
+import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';
 import {
   INPUT_GUARD_MS,
   canOfferContinue,
+  canOfferDouble,
+  canOfferHint,
+  canOfferReroll,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
@@ -24,11 +33,15 @@ import {
   viewModel
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
-import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin } from './layout.js';
+import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
-import { canPlace, createMatch } from './logic.js';
+import { canPlace, createMatch, isStuck } from './logic.js';
+import { scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
+import { beginRun, milestoneHit, noteLoss, noteSuccess, shouldShowWelcome, STREAK_RESET_COPY, bandShapes } from './retention.js';
+import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
+import { createSaveStore } from './save.js';
 import { attachSimBridge } from './sim-bridge.js';
 import { createUi } from './ui.js';
 
@@ -72,10 +85,36 @@ function start() {
   document.documentElement.style.setProperty('--accent', registry.get('ui.button_rectangle_flat.blue').color);
   document.body.style.fontFamily = registry.get('font.kenney-future').family;
 
-  const consentStore = createConsentStore(bootStorage());
+  const storage = bootStorage();
+  const saveStore = createSaveStore(storage);
+  let progress = saveStore.load();
+  if (progress.run && progress.run.board.length !== tuning.grid) progress = { ...progress, run: null };
+  const consentStore = createConsentStore(storage);
   let consent = consentStore.load();
-  const tracker = createTracker({ getConsent: () => consent });
-  const pacer = createPacer({ pacing, isChild: () => Boolean(consent?.isChild) });
+  const tracker = createTracker({
+    getConsent: () => consent,
+    adapter: createMixpanelAdapter({ token: analyticsConfig.token })
+  });
+  void tracker.sync();
+  const pacer = createPacer({
+    pacing,
+    isChild: () => Boolean(consent?.isChild),
+    sessionNumber: (progress.sessions || 0) + 1
+  });
+  const ads = createGuardedAds({ pacer });
+  let reducedMotion = initialMotion({
+    stored: progress.settings?.reducedMotion ?? null,
+    query: typeof matchMedia === 'function' ? matchMedia.bind(window) : null
+  });
+  let hapticsOn = initialHaptics({ stored: progress.settings?.haptics ?? null });
+  let sessions = progress.sessions || 0;
+  let installDay = progress.installDay || formatLocalDate(new Date());
+  let daily = progress.daily || { lastCompleted: '', streak: 0, freezes: 0, marks: 0 };
+  const feedback = createFeedback({
+    config: tuning.juice,
+    reducedMotion,
+    now: () => performance.now()
+  });
   const audio = createAudio(registry);
   const install = createInstallController();
   const ui = createUi(document);
@@ -89,9 +128,24 @@ function start() {
     height: window.innerHeight,
     grid: tuning.grid
   });
-  let levelIndex = 0;
-  let continueUses = 0;
+  let levelIndex = progress.run?.levelIndex || 0;
+  let continueUses = progress.run?.continueUses || 0;
+  let hintsUsed = progress.run?.hintsUsed || 0;
+  let rerollsUsed = progress.run?.rerollsUsed || 0;
+  let doublesUsed = progress.run?.doublesUsed || 0;
+  let playMs = progress.run?.playMs || 0;
+  let sawStuck = progress.run?.sawStuck === true;
+  let mode = progress.run?.mode === 'daily' ? 'daily' : 'arcade';
+  let mercy = progress.mercy || { lossesInRow: 0, queued: 0 };
+  let easyRun = progress.easyRun === true;
+  let lossNoted = progress.run?.phase === 'game_over';
+  let onboardingIndex = null;
+  let onboardingStarted = 0;
+  let moves = 0;
+  let dailyNote = '';
+  let lastTick = performance.now();
   let pointer = createPointerState();
+  let pointerKind = 'mouse';
   let ignoreUntil = 0;
   let overlay = null;
   let rewardKind = null;
@@ -103,19 +157,84 @@ function start() {
     return LEVELS[id] ?? LEVELS['round-01'];
   }
 
-  function makeMatch() {
-    return createMatch({
-      grid: tuning.grid,
-      traySize: tuning.traySize,
-      score: tuning.score,
-      rng: mulberry32((Date.now() ^ (levelIndex + 1) * 997) >>> 0),
-      targetClears: level().targetClears,
-      poolFor: (clears) => pacer.shapePool(clears),
-      palette
+  function scoreTuning() {
+    return {
+      ...tuning.score,
+      graceMoves: retention.feedback.runStreak.graceMoves,
+      bonusPerStep: retention.feedback.runStreak.bonusPerStep
+    };
+  }
+
+  function dealPool(_clears, score) {
+    return bandShapes({
+      score,
+      easy: easyRun,
+      pools: pacing.difficulty.pools,
+      ramp: retention.difficulty.rampByScore
     });
   }
 
-  let match = makeMatch();
+  function utcSeed() {
+    return dateSeed(formatUtcDate(new Date()));
+  }
+
+  function makeMatch(saved) {
+    const dailyTarget = dailyObjective(utcSeed(), retention.dailyChallenge.objectiveRange);
+    return createMatch({
+      grid: tuning.grid,
+      traySize: tuning.traySize,
+      score: scoreTuning(),
+      rng: mulberry32(mode === 'daily'
+        ? utcSeed()
+        : ((Date.now() ^ ((levelIndex + 1) * 997)) >>> 0)),
+      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : level().targetClears),
+      poolFor: dealPool,
+      palette,
+      saved
+    });
+  }
+
+  function scriptedMatch(index, keptScore = 0) {
+    const script = scriptedBoards()[index];
+    return createMatch({
+      grid: tuning.grid,
+      traySize: tuning.traySize,
+      score: scoreTuning(),
+      rng: () => 0,
+      targetClears: 99,
+      poolFor: () => ['dot'],
+      palette,
+      saved: {
+        board: script.board,
+        pieces: script.pieces,
+        score: keptScore,
+        phase: 'playing',
+        targetClears: 99
+      }
+    });
+  }
+
+  function startEasyRun() {
+    const started = beginRun(mercy);
+    mercy = started.mercy;
+    easyRun = started.easy;
+    lossNoted = false;
+  }
+
+  let match;
+  if (progress.run) match = makeMatch(progress.run);
+  else if (retention.onboarding.enabled && !shouldSkipOnboarding(progress)) {
+    onboardingIndex = 0;
+    onboardingStarted = performance.now();
+    match = scriptedMatch(0);
+  } else match = makeMatch();
+
+  function trackRunStart() {
+    tracker.track('run_start', {
+      mode: mode === 'daily' ? 'daily' : 'endless',
+      run_index: sessions
+    });
+  }
 
   function screen() {
     if (!consent) return 'age_gate';
@@ -127,8 +246,22 @@ function start() {
   function noteSession() {
     if (sessionNoted || screen() !== 'play') return;
     sessionNoted = true;
-    tracker.track('session_start', { game: 'gridrift' });
+    const today = formatLocalDate(new Date());
+    if (!installDay) installDay = today;
+    const days = daysSinceInstall(installDay, today);
+    if (sessions === 0) tracker.track('first_open', { game: 'gridrift' });
+    const isFirst = sessions === 0;
+    sessions += 1;
+    tracker.track('session_start', { game: 'gridrift', days_since_install: days });
+    tracker.track('app_open', {
+      is_first: isFirst,
+      days_since_install: days,
+      streak: daily.streak || 0
+    });
     tracker.track('round_start', { round: level().id });
+    if (onboardingIndex === null) trackRunStart();
+    else tracker.track('onboarding_step', { step: onboardingIndex + 1 });
+    persist();
   }
 
   function armIgnore() {
@@ -140,31 +273,195 @@ function start() {
     publishOverlay(true);
   }
 
+  function tap() {
+    audio.play(feedback.config.sounds.tap);
+  }
+
+  function persist() {
+    const state = match.state;
+    progress = saveStore.save({
+      bestScore: Math.max(progress.bestScore || 0, state.score),
+      tutorialSeen: progress.tutorialSeen === true,
+      sessions,
+      installDay,
+      lastSeen: Date.now(),
+      easyRun,
+      mercy,
+      settings: { reducedMotion, haptics: hapticsOn },
+      daily,
+      run: {
+        board: state.board,
+        pieces: state.pieces.map((piece) => (piece ? {
+          shapeName: piece.shapeName,
+          color: piece.color,
+          tileId: piece.tileId
+        } : null)),
+        score: state.score,
+        streak: state.streak,
+        bestStreak: state.bestStreak,
+        roundClears: state.roundClears,
+        totalClears: state.totalClears,
+        targetClears: state.targetClears,
+        levelIndex,
+        continueUses,
+        hintsUsed,
+        rerollsUsed,
+        doublesUsed,
+        playMs: Math.floor(playMs),
+        sawStuck,
+        mode,
+        dryMoves: state.dryMoves,
+        phase: state.phase
+      }
+    });
+  }
+
+  function openEntry() {
+    const away = retention.persistence.welcomeBack;
+    if (away.enabled && shouldShowWelcome({
+      run: progress.run,
+      lastSeen: progress.lastSeen,
+      now: Date.now(),
+      minAwayMinutes: away.minAwayMinutes
+    })) {
+      overlay = { screen: 'welcome_back' };
+    } else overlay = null;
+    publishOverlay(true);
+  }
+
+  function playSounds(ids, rate = 1) {
+    for (const id of ids) audio.play(id, rate);
+  }
+
+  function vibrateFor(lines) {
+    const supported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+    if (!shouldVibrate({ enabled: hapticsOn, reducedMotion, supported })) return;
+    if (lines < 2) return;
+    navigator.vibrate(lines >= 3 ? [16, 20, 16] : [12]);
+  }
+
+  function handoff(keptScore) {
+    onboardingIndex = null;
+    progress = { ...progress, tutorialSeen: true };
+    startEasyRun();
+    const board = Array.from({ length: tuning.grid }, () => Array(tuning.grid).fill(0));
+    match = makeMatch({
+      board,
+      pieces: [null, null, null],
+      score: keptScore,
+      phase: 'playing',
+      targetClears: level().targetClears
+    });
+    overlay = null;
+    pointer = createPointerState();
+    persist();
+  }
+
+  function advanceOnboarding() {
+    const kept = match.state.score;
+    if (onboardingIndex < scriptedBoards().length - 1) {
+      onboardingIndex += 1;
+      match = scriptedMatch(onboardingIndex, kept);
+      pointer = createPointerState();
+      tracker.track('onboarding_step', { step: onboardingIndex + 1 });
+      persist();
+      return;
+    }
+    const elapsed = onboardingStarted ? Math.round(performance.now() - onboardingStarted) : 0;
+    handoff(kept);
+    tracker.track('onboarding_complete', { ms: elapsed });
+    trackRunStart();
+  }
+
+  function interstitialAllowed(breakType) {
+    if (pacer.consumeInterstitialSkip(breakType)) return false;
+    return ads.canShowInterstitial(breakType);
+  }
+
+  function doubleReady() {
+    if (consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('double_score')) return false;
+    return canOfferDouble({
+      doublesUsed,
+      rewardedAllowed: ads.canOfferRewarded('double_score')
+    });
+  }
+
   function finishRound() {
     pacer.recordRoundEnded();
+    if (!easyRun) mercy = noteSuccess(mercy);
+    if (mode === 'daily') {
+      const before = daily.streak || 0;
+      const beforeFreezes = daily.freezes || 0;
+      daily = settleDaily(daily, streakDay(new Date(), retention.dayStreak.rolloverHourLocal), {
+        rewardAmount: retention.dailyChallenge.reward.amount,
+        earnEveryNDays: retention.dayStreak.freezes.earnEveryNDays
+      });
+      dailyNote = daily.status === 'reset' ? STREAK_RESET_COPY : '';
+      const hit = milestoneHit(before, daily.streak, retention.dayStreak.milestones);
+      if (hit && retention.dayStreak.milestoneFx) {
+        audio.play('sfx.streak.3');
+        vibrateFor(2);
+      }
+      if (['started', 'continued', 'frozen', 'reset'].includes(daily.status)) {
+        tracker.track('daily_complete', {
+          streak: daily.streak,
+          freezes: daily.freezes,
+          seed: utcSeed(),
+          ms: Math.round(playMs)
+        });
+        tracker.track('streak_update', {
+          value: daily.streak,
+          freeze_used: daily.status === 'frozen'
+        });
+        if ((daily.freezes || 0) > beforeFreezes) tracker.track('freeze_earned', { freezes: daily.freezes });
+      }
+    }
     tracker.track('round_complete', { score: match.state.score, round: level().id });
     audio.play('sfx.win');
-    show({ screen: 'round_complete' });
+    persist();
+    show({ screen: 'round_complete', doubleScore: doubleReady() });
   }
 
   function finishGame() {
     pacer.recordRoundEnded();
+    if (!lossNoted) {
+      mercy = easyRun ? { lossesInRow: 1, queued: 0 } : noteLoss(mercy, retention.difficulty.mercy.afterLossesInRow);
+      easyRun = false;
+      lossNoted = true;
+    }
     tracker.track('game_over', { score: match.state.score });
+    tracker.track('run_end', {
+      score: match.state.score,
+      best: Math.max(progress.bestScore || 0, match.state.score),
+      is_new_best: match.state.score > (progress.bestScore || 0),
+      moves,
+      cause: 'stuck'
+    });
     audio.play('sfx.game_over');
-    const rewardedAllowed = pacer.canOfferRewarded('continue');
+    const rewardedAllowed = ads.canOfferRewarded('continue');
+    const continueOffered = canOfferContinue(continueUses, rewardedAllowed);
     const plan = planBreak({
       type: 'game_over',
-      interstitialAllowed: pacer.canShowInterstitial('game_over'),
+      interstitialAllowed: continueOffered ? false : interstitialAllowed('game_over'),
       rewardedAllowed,
-      continueUsed: !canOfferContinue(continueUses, true)
+      continueUsed: !continueOffered
     });
+    persist();
     if (plan === 'ad_then_results') {
-      pacer.recordAd('interstitial');
-      tracker.track('ad_break_shown', { break: 'game_over' });
-      show({ screen: 'ad_break', after: 'game_over' });
-      return;
+      const result = ads.showInterstitial({ breakType: 'game_over' });
+      if (result.shown) {
+        tracker.track('ad_break_shown', { break: 'game_over' });
+        show({ screen: 'ad_break', after: 'game_over' });
+        return;
+      }
     }
-    show({ screen: 'game_over', rewarded: plan === 'results_with_rewarded' });
+    show({
+      screen: 'game_over',
+      rewarded: plan === 'results_with_rewarded',
+      doubleScore: doubleReady()
+    });
   }
 
   function startNextRound() {
@@ -173,38 +470,122 @@ function start() {
     overlay = null;
     armIgnore();
     tracker.track('round_start', { round: level().id });
-    audio.play('sfx.click');
+    tap();
+    persist();
     if (match.state.phase === 'game_over') finishGame();
+  }
+
+  function resetRunCounters() {
+    continueUses = 0;
+    hintsUsed = 0;
+    rerollsUsed = 0;
+    doublesUsed = 0;
+    playMs = 0;
+    sawStuck = false;
+  }
+
+  function hintReady() {
+    if (screen() !== 'play' || consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return false;
+    return canOfferHint({
+      elapsedMs: playMs,
+      stuck: sawStuck,
+      hintsUsed,
+      rewardedAllowed: ads.canOfferRewarded('hint')
+    });
+  }
+
+  function rerollReady() {
+    if (screen() !== 'play' || consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('reroll')) return false;
+    return canOfferReroll({
+      stuck: isStuck(match.state.board, match.state.pieces),
+      rerollsUsed,
+      rewardedAllowed: ads.canOfferRewarded('reroll')
+    });
   }
 
   function restart() {
     levelIndex = 0;
-    continueUses = 0;
+    mode = 'arcade';
+    resetRunCounters();
     rewardKind = null;
+    startEasyRun();
     match = makeMatch();
+    moves = 0;
     overlay = null;
     pointer = createPointerState();
     armIgnore();
     tracker.track('restart', {});
-    audio.play('sfx.click');
+    trackRunStart();
+    tap();
+    persist();
   }
 
   function grantReward() {
-    pacer.recordAd('rewarded');
-    tracker.track('rewarded_completed', { kind: rewardKind || 'continue' });
+    const kind = rewardKind || 'continue';
+    const result = ads.showRewarded({ placement: kind, optedIn: true });
+    if (!result.rewarded) {
+      rewardKind = null;
+      overlay = null;
+      armIgnore();
+      return;
+    }
+    tracker.track('rewarded_completed', { kind });
     armIgnore();
     if (rewardKind === 'hint') {
+      hintsUsed = 1;
       match.showHint();
       overlay = null;
-      audio.play('sfx.click');
+      tap();
+    } else if (rewardKind === 'reroll') {
+      rerollsUsed = 1;
+      const outcome = match.reroll();
+      overlay = null;
+      audio.play('sfx.clear');
+      if (outcome.gameOver) finishGame();
+    } else if (rewardKind === 'double_score') {
+      doublesUsed = 1;
+      match.doubleScore();
+      audio.play('sfx.win');
+      if (match.state.phase === 'round_complete') show({ screen: 'round_complete', doubleScore: false });
+      else {
+        show({
+          screen: 'game_over',
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          doubleScore: false
+        });
+      }
     } else {
       continueUses += 1;
       const outcome = match.continueRun(rowsForContinue(tuning.continueClears));
       overlay = null;
-      audio.play('sfx.line_clear');
+      audio.play('sfx.clear');
       if (outcome.gameOver) finishGame();
     }
     rewardKind = null;
+    persist();
+  }
+
+  function resumeRun() {
+    tap();
+    if (match.state.phase === 'game_over') {
+      show({
+        screen: 'game_over',
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+        doubleScore: doubleReady()
+      });
+      return;
+    }
+    if (match.state.phase === 'round_complete') {
+      show({ screen: 'round_complete', doubleScore: doubleReady() });
+      return;
+    }
+    overlay = null;
+    armIgnore();
+    publishOverlay(true);
   }
 
   function onAction(id) {
@@ -221,26 +602,93 @@ function start() {
     }
     if (id === 'age_under') {
       consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      tap();
+      void tracker.sync();
       show({ screen: 'kid_mode' });
       return;
     }
     if (id === 'age_13') {
       consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
+      tap();
       overlay = null;
-      publishOverlay(true);
+      if (consent.needsAnalyticsPrompt) {
+        publishOverlay(true);
+        return;
+      }
+      openEntry();
       return;
     }
     if (id === 'analytics_yes' || id === 'analytics_no') {
       const choice = id === 'analytics_yes' ? 'granted' : 'denied';
       consent = consentStore.save(applyAnalyticsChoice(consent, choice));
-      overlay = null;
+      tap();
+      void tracker.sync();
       tracker.track('consent_updated', { granted: choice === 'granted' });
-      publishOverlay(true);
+      openEntry();
+      return;
+    }
+    if (id === 'analytics_revoke') {
+      if (!consent || consent.isChild || !consent.analyticsAllowed) return;
+      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      void tracker.sync();
       return;
     }
     if (id === 'start_play') {
+      tap();
+      openEntry();
+      return;
+    }
+    if (id === 'resume') {
+      resumeRun();
+      return;
+    }
+    if (id === 'motion') {
+      reducedMotion = !reducedMotion;
+      feedback.setReducedMotion(reducedMotion);
+      tap();
+      persist();
+      return;
+    }
+    if (id === 'haptics') {
+      hapticsOn = !hapticsOn;
+      tap();
+      persist();
+      return;
+    }
+    if (id === 'daily') {
+      mode = 'daily';
+      levelIndex = 0;
+      resetRunCounters();
+      rewardKind = null;
+      onboardingIndex = null;
+      startEasyRun();
+      match = makeMatch();
+      moves = 0;
+      pointer = createPointerState();
       overlay = null;
-      publishOverlay(true);
+      armIgnore();
+      tap();
+      tracker.track('daily_start', { seed: utcSeed() });
+      trackRunStart();
+      persist();
+      return;
+    }
+    if (id === 'new_game') {
+      levelIndex = 0;
+      mode = 'arcade';
+      resetRunCounters();
+      rewardKind = null;
+      onboardingIndex = null;
+      progress = { ...progress, tutorialSeen: true };
+      startEasyRun();
+      match = makeMatch();
+      moves = 0;
+      pointer = createPointerState();
+      tap();
+      overlay = null;
+      armIgnore();
+      trackRunStart();
+      persist();
       return;
     }
     if (id === 'close_ad') {
@@ -248,17 +696,22 @@ function start() {
       tracker.track('ad_break_closed', { break: after === 'game_over' ? 'game_over' : 'between_rounds' });
       armIgnore();
       if (after === 'next_round') startNextRound();
-      else show({ screen: 'game_over', rewarded: false });
+      else {
+        tap();
+        show({ screen: 'game_over', rewarded: false, doubleScore: doubleReady() });
+      }
       return;
     }
     if (id === 'next_round') {
       const advance = planRoundAdvance({
-        interstitialAllowed: pacer.canShowInterstitial('between_rounds')
+        interstitialAllowed: interstitialAllowed('between_rounds')
       });
       if (advance === 'ad_then_next') {
-        pacer.recordAd('interstitial');
-        tracker.track('ad_break_shown', { break: 'between_rounds' });
-        show({ screen: 'ad_break', after: 'next_round' });
+        const result = ads.showInterstitial({ breakType: 'between_rounds' });
+        if (result.shown) {
+          tracker.track('ad_break_shown', { break: 'between_rounds' });
+          show({ screen: 'ad_break', after: 'next_round' });
+        } else startNextRound();
       } else startNextRound();
       return;
     }
@@ -266,31 +719,48 @@ function start() {
       restart();
       return;
     }
-    if (id === 'offer_continue' || id === 'offer_hint') {
-      const kind = id === 'offer_hint' ? 'hint' : 'continue';
-      if (!pacer.canOfferRewarded(kind)) return;
+    if (id === 'offer_continue' || id === 'offer_hint' || id === 'offer_reroll' || id === 'offer_double') {
+      const kind = id === 'offer_hint'
+        ? 'hint'
+        : id === 'offer_reroll'
+          ? 'reroll'
+          : id === 'offer_double'
+            ? 'double_score'
+            : 'continue';
+      if (kind === 'hint' && !hintReady()) return;
+      if (kind === 'reroll' && !rerollReady()) return;
+      if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'))) return;
+      if (kind === 'double_score' && !canOfferDouble({ doublesUsed, rewardedAllowed: ads.canOfferRewarded('double_score') })) return;
+      if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
+      tap();
       show({ screen: 'rewarded_confirm', kind });
       return;
     }
     if (id === 'decline') {
       tracker.track('rewarded_declined', { kind: rewardKind || 'continue' });
-      const backToResults = match.state.phase === 'game_over';
+      tap();
       rewardKind = null;
-      if (backToResults) {
+      if (match.state.phase === 'round_complete') {
+        show({ screen: 'round_complete', doubleScore: doubleReady() });
+        return;
+      }
+      if (match.state.phase === 'game_over') {
         show({
           screen: 'game_over',
-          rewarded: pacer.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          doubleScore: doubleReady()
         });
-      } else {
-        overlay = null;
-        armIgnore();
+        return;
       }
+      overlay = null;
+      armIgnore();
       return;
     }
     if (id === 'watch') {
       tracker.track('rewarded_accepted', { kind: rewardKind || 'continue' });
+      tap();
       show({ screen: 'rewarded_play', kind: rewardKind });
       return;
     }
@@ -307,8 +777,12 @@ function start() {
     const view = viewModel({
       screen: name,
       rewarded: Boolean(overlay?.rewarded),
+      doubleScore: Boolean(overlay?.doubleScore),
       kind: overlay?.kind || rewardKind,
+      step: overlay?.step || 0,
       score: state.score,
+      bestScore: Math.max(progress.bestScore || 0, state.score),
+      streak: daily.streak || 0,
       bestStreak: state.bestStreak,
       roundName: level().name
     });
@@ -342,8 +816,15 @@ function start() {
     );
   }
 
+  function liftPx() {
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    if (coarse || pointerKind === 'touch') return retention.onboarding.dragOffsetPx;
+    return 0;
+  }
+
   function hitAt(point, piece) {
     const overBoard = point.x >= 0 && point.y >= 0 && point.x < layout.boardSize && point.y < layout.boardSize;
+    const trayIndex = hitTray(point.x, point.y, layout);
     let snapX = 0;
     let snapY = 0;
     let ghostValid = false;
@@ -354,7 +835,8 @@ function start() {
       ghostValid = canPlace(match.state.board, piece.shape, snapX, snapY);
     }
     return {
-      trayIndex: hitTray(point.x, point.y, layout),
+      trayIndex,
+      trayFilled: trayIndex >= 0 && Boolean(match.state.pieces[trayIndex]),
       overBoard,
       snapX,
       snapY,
@@ -363,25 +845,63 @@ function start() {
     };
   }
 
-  function commitPlace(index, x, y) {
+  function commitPlace(index, x, y, point = null) {
     const result = match.place(index, x, y);
     if (!result.ok) {
-      audio.play('sfx.error');
+      if (point) {
+        const piece = match.state.pieces[index];
+        const slot = traySlots(layout)[index];
+        const burst = feedback.invalid({
+          index,
+          fromX: point.x,
+          fromY: point.y - liftPx(),
+          toX: slot ? slot.x + slot.w / 2 : point.x,
+          toY: slot ? slot.y + slot.h / 2 : point.y,
+          piece
+        });
+        playSounds(burst.sounds);
+      } else {
+        audio.play('sfx.error');
+      }
       return result;
     }
     audio.play('sfx.place');
+    moves += 1;
     tracker.track('piece_placed', { cells: result.gained, x, y });
     if (result.lines > 0) {
-      audio.play(result.combo >= 2 ? 'sfx.combo' : 'sfx.line_clear');
+      const burst = feedback.clear({
+        rows: result.rows,
+        cols: result.cols,
+        cell: layout.cell,
+        grid: tuning.grid,
+        color: result.color,
+        points: result.gained,
+        streak: match.state.streak,
+        popupX: (x + 0.5) * layout.cell,
+        popupY: (y + 0.5) * layout.cell
+      });
+      playSounds(burst.sounds, burst.pitch);
+      vibrateFor(result.lines);
       tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
+      tracker.track('line_clear', {
+        lines: result.lines,
+        combo: result.combo || 0,
+        run_streak: match.state.streak
+      });
       if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
     }
+    if (onboardingIndex !== null && result.lines > 0) {
+      advanceOnboarding();
+      return result;
+    }
+    persist();
     if (result.roundComplete) finishRound();
     else if (result.gameOver) finishGame();
     return result;
   }
 
   function onPointer(type, event) {
+    pointerKind = event.pointerType || pointerKind;
     const point = pointFrom(event);
     const previewPiece = pointer.drag
       ? match.state.pieces[pointer.drag.index]
@@ -395,11 +915,23 @@ function start() {
     }, hit);
     pointer = reduced.state;
     if (!reduced.effect || reduced.effect.type === 'select' || reduced.effect.type === 'cancel') {
-      if (reduced.effect?.type === 'cancel') audio.play('sfx.error');
+      if (reduced.effect?.type === 'cancel' && reduced.effect.moved && Number.isInteger(reduced.effect.index)) {
+        const piece = match.state.pieces[reduced.effect.index];
+        const slot = traySlots(layout)[reduced.effect.index];
+        const burst = feedback.invalid({
+          index: reduced.effect.index,
+          fromX: point.x,
+          fromY: point.y - liftPx(),
+          toX: slot ? slot.x + slot.w / 2 : point.x,
+          toY: slot ? slot.y + slot.h / 2 : point.y,
+          piece
+        });
+        playSounds(burst.sounds);
+      }
       return;
     }
     if (reduced.effect.type === 'place') {
-      commitPlace(reduced.effect.index, reduced.effect.x, reduced.effect.y);
+      commitPlace(reduced.effect.index, reduced.effect.x, reduced.effect.y, point);
     }
   }
 
@@ -426,8 +958,18 @@ function start() {
     navigator.serviceWorker.register('./sw.js', { type: 'module' }).catch(() => {});
   }
 
+  function hintMode() {
+    return hintReady() ? 'ready' : 'off';
+  }
+
   function frame() {
+    const now = performance.now();
+    const elapsed = Math.max(0, Math.min(1000, now - lastTick));
+    lastTick = now;
+    if (screen() === 'play') playMs += elapsed;
+    if (!sawStuck && screen() === 'play' && isStuck(match.state.board, match.state.pieces)) sawStuck = true;
     const state = match.state;
+    const fx = feedback.sample(now);
     let ghost = null;
     let drag = null;
     const active = pointer.drag ? state.pieces[pointer.drag.index] : null;
@@ -444,9 +986,14 @@ function start() {
           color: active.color,
           valid: canPlace(state.board, active.shape, snap.x, snap.y)
         };
-      } else {
-        drag = { x: pointer.drag.x, y: pointer.drag.y, index: pointer.drag.index, piece: active };
       }
+      drag = {
+        x: pointer.drag.x,
+        y: pointer.drag.y,
+        index: pointer.drag.index,
+        piece: active,
+        lift: liftPx()
+      };
     }
     drawScene(ctx, {
       layout,
@@ -456,17 +1003,36 @@ function start() {
       drag,
       ghost,
       hint: state.hint,
-      selected: pointer.selected
+      selected: pointer.selected,
+      juice: fx
     });
+    const steps = feedback.config.streakSteps;
+    const meterMax = steps[steps.length - 1] || 6;
     ui.setHud({
       score: state.score,
+      best: Math.max(progress.bestScore || 0, state.score),
       streak: state.streak,
       combo: state.combo,
       round: level().name,
       clears: state.roundClears,
       target: state.targetClears,
-      hint: screen() === 'play' && !consent?.isChild && pacer.canOfferRewarded('hint'),
+      goal: onboardingIndex !== null
+        ? scriptedBoards()[onboardingIndex].prompt
+        : mode === 'daily'
+          ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}${dailyNote ? ` · ${dailyNote}` : ''}`
+          : `Clear ${state.targetClears} lines`,
+      meter: Math.max(0, Math.min(1, state.streak / meterMax)),
+      meterMax,
+      celebrate: celebrationLevel(state.streak, steps),
+      hintNote: state.hint?.label || '',
+      hint: hintMode(),
+      reroll: rerollReady() ? 'ready' : 'off',
+      dailyLabel: mode === 'daily' ? `Daily ${daily.streak || 0}` : 'Daily',
+      dailyOn: mode === 'daily',
+      reducedMotion,
+      haptics: hapticsOn,
       install: install.available && screen() === 'play',
+      stats: screen() === 'play' && Boolean(consent && !consent.isChild && consent.analyticsAllowed),
       muted: audio.muted
     });
     publishOverlay(false);
@@ -492,7 +1058,8 @@ function start() {
   });
 
   measure();
-  publishOverlay(true);
+  if (consent && !consent.needsAnalyticsPrompt) openEntry();
+  else publishOverlay(true);
   requestAnimationFrame(frame);
 }
 

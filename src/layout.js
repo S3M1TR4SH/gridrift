@@ -7,8 +7,8 @@ if (CONTROL_GAP_PX < LIMITS.ads.minControlSeparationPx) {
 }
 
 export function computeLayout({ width, height, grid = 10 }) {
-  const chrome = 104;
-  const pad = 16;
+  const chrome = 150;
+  const pad = 0;
   const gap = 8;
   const availW = Math.max(220, width - pad * 2);
   const availH = Math.max(280, height - chrome);
