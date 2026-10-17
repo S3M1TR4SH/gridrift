@@ -46,7 +46,12 @@ export function neutralizePacing(pacing = {}) {
   };
 }
 
-export function createPacer({ pacing, now = () => Date.now(), isChild = () => false } = {}) {
+export function createPacer({
+  pacing,
+  now = () => Date.now(),
+  isChild = () => false,
+  sessionNumber = 2
+} = {}) {
   const interstitial = pacing?.ads?.interstitial ?? {};
   const rewarded = pacing?.ads?.rewarded ?? {};
   const difficulty = pacing?.difficulty ?? {};
@@ -57,10 +62,20 @@ export function createPacer({ pacing, now = () => Date.now(), isChild = () => fa
     0,
     LIMITS.ads.maxPerSession
   );
-  const interstitialGapMs = Math.max(
+  const requestedGap = Number(interstitial.minSecondsBetween);
+  const interstitialSeconds = Math.max(
     LIMITS.ads.minSecondsBetween,
-    Number(interstitial.minSecondsBetween) || LIMITS.ads.minSecondsBetween
-  ) * 1000;
+    Number.isFinite(requestedGap) && requestedGap > 0 ? requestedGap : LIMITS.ads.minSecondsBetween
+  );
+  const interstitialGapMs = interstitialSeconds * 1000;
+  const intervalArms = (Array.isArray(interstitial.intervalArms) ? interstitial.intervalArms : [])
+    .map((value) => {
+      const number = Math.floor(Number(value));
+      if (!Number.isFinite(number)) return null;
+      return Math.max(LIMITS.ads.minSecondsBetween, number);
+    })
+    .filter((value) => value != null);
+  const session = Math.max(1, Math.floor(Number(sessionNumber) || 1));
   const minRounds = Math.max(
     LIMITS.ads.minRoundsBetween,
     Number(interstitial.minRoundsBetween) || LIMITS.ads.minRoundsBetween
@@ -82,10 +97,24 @@ export function createPacer({ pacing, now = () => Date.now(), isChild = () => fa
   let rewardedShown = 0;
   let lastInterstitialAt = -Infinity;
   let lastRewardedAt = -Infinity;
+  let nextInterstitialAt = -Infinity;
   let roundsSinceAd = Number.POSITIVE_INFINITY;
+  let pendingSkip = false;
 
   function child() {
     return Boolean(isChild());
+  }
+
+  function interstitialBlock(breakType) {
+    if (child()) return 'child';
+    if (!interstitial.enabled || pacing?.privacy?.childrenAdsAllowed) return 'disabled';
+    if (session < 2) return 'first_session';
+    if (!breaks.includes(breakType)) return 'break';
+    if (interstitialsShown >= interstitialMax) return 'cap';
+    if (now() < nextInterstitialAt) return 'cooldown';
+    if (roundsSinceAd < minRounds) return 'rounds';
+    if (pendingSkip) return 'rewarded_skip';
+    return null;
   }
 
   function shapePool(clears) {
@@ -113,13 +142,18 @@ export function createPacer({ pacing, now = () => Date.now(), isChild = () => fa
     recordRoundEnded() {
       if (roundsSinceAd !== Number.POSITIVE_INFINITY) roundsSinceAd += 1;
     },
+    get interstitialSeconds() {
+      return interstitialSeconds;
+    },
+    get intervalArms() {
+      return intervalArms.slice();
+    },
     canShowInterstitial(breakType) {
-      if (child()) return false;
-      if (!interstitial.enabled || pacing?.privacy?.childrenAdsAllowed) return false;
-      if (!breaks.includes(breakType)) return false;
-      if (interstitialsShown >= interstitialMax) return false;
-      if (now() - lastInterstitialAt < interstitialGapMs) return false;
-      if (roundsSinceAd < minRounds) return false;
+      return interstitialBlock(breakType) === null;
+    },
+    consumeInterstitialSkip(breakType) {
+      if (interstitialBlock(breakType) !== 'rewarded_skip') return false;
+      pendingSkip = false;
       return true;
     },
     canOfferRewarded(placement) {
@@ -138,13 +172,17 @@ export function createPacer({ pacing, now = () => Date.now(), isChild = () => fa
       if (kind === 'interstitial') {
         interstitialsShown += 1;
         lastInterstitialAt = timestamp;
+        nextInterstitialAt = timestamp + interstitialGapMs;
         roundsSinceAd = 0;
+        pendingSkip = false;
         return;
       }
       if (kind === 'rewarded') {
         rewardedShown += 1;
         lastRewardedAt = timestamp;
+        nextInterstitialAt = timestamp + interstitialGapMs;
         roundsSinceAd = 0;
+        pendingSkip = true;
       }
     },
     snapshot() {

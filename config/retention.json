@@ -1,0 +1,115 @@
+{
+  "persistence": {
+    "saveRunOnEveryPlacement": true,
+    "storage": "local",
+    "trackBestScore": true,
+    "persistLevel": {
+      "enabled": true,
+      "fields": ["levelId", "clears", "clearsGoal", "score", "streak", "board", "tray"]
+    },
+    "welcomeBack": {
+      "enabled": true,
+      "showBestScore": true,
+      "showStreak": true,
+      "minAwayMinutes": 30,
+      "copy": "{levelName}: {clears}/{clearsGoal} clears. Best {best}",
+      "cta": "Continue level"
+    }
+  },
+  "feedback": {
+    "clearFx": ["flash", "particles", "scorePopup"],
+    "multiClearFx": ["shake", "pitchRise"],
+    "maxFxMs": 400,
+    "combo": {
+      "enabled": true,
+      "multiplierPerLine": 1.0,
+      "showCounter": true
+    },
+    "streakFx": {
+      "minStreak": 2,
+      "popupText": "Streak x{n}"
+    },
+    "levelCompleteFx": ["confetti", "goalCheck"],
+    "invalidDropFx": ["shake", "softSound"],
+    "runStreak": {
+      "enabled": true,
+      "graceMoves": 1,
+      "bonusPerStep": 10
+    },
+    "haptics": {
+      "enabled": true,
+      "userToggle": true
+    },
+    "respectReducedMotion": true
+  },
+  "onboarding": {
+    "enabled": true,
+    "scriptedBoards": 2,
+    "prefilledFirstBoard": true,
+    "guaranteeFirstClearWithinMoves": 3,
+    "coachMarks": [
+      { "target": "tray", "text": "Drag a block onto the grid" },
+      { "target": "board", "text": "Fill a row or column to clear it" },
+      { "target": "clearsGoal", "text": "Clear {clearsGoal} lines to finish the level" }
+    ],
+    "textMaxWords": 8,
+    "dismissOnAction": true,
+    "skipForReturningPlayers": true,
+    "firstSessionNoInterstitials": true,
+    "dragOffsetPx": 60
+  },
+  "difficulty": {
+    "shapePool": "full",
+    "minShapes": 15,
+    "rampByScore": [[0, "easy"], [300, "normal"], [1200, "hard"]],
+    "fairDeal": {
+      "guaranteeOnePlaceable": true
+    },
+    "mercy": {
+      "afterLossesInRow": 3,
+      "easierDealRuns": 1
+    },
+    "adIndependentRng": true
+  },
+  "dailyChallenge": {
+    "enabled": true,
+    "seed": "utcDate",
+    "targetMinutes": [2, 4],
+    "objective": "clearLines",
+    "objectiveRange": [8, 20],
+    "reward": {
+      "type": "cosmeticCurrency",
+      "amount": 20
+    }
+  },
+  "dayStreak": {
+    "enabled": true,
+    "countsOn": "dailyChallengeComplete",
+    "rolloverHourLocal": 4,
+    "freezes": {
+      "max": 2,
+      "earnEveryNDays": 7,
+      "purchasable": false,
+      "adOnly": false
+    },
+    "milestones": [3, 7, 14, 30],
+    "milestoneFx": true,
+    "lossCopyTone": "neutral"
+  },
+  "tray": {
+    "fixedSlots": true
+  },
+  "layout": {
+    "mobilePortrait": {
+      "boardAnchor": "upper",
+      "topPanel": {
+        "enabled": true,
+        "show": ["bestScore", "levelName", "clearsProgressBar"]
+      },
+      "trayAnchor": "bottom",
+      "minCellPx": 40,
+      "hudMinFontPx": 14,
+      "dragOffsetPx": 60
+    }
+  }
+}

@@ -1,6 +1,7 @@
 export const ANALYTICS_SCHEMA_VERSION = 1;
 
 export const EVENT_NAMES = Object.freeze([
+  'first_open',
   'session_start',
   'consent_updated',
   'round_start',
@@ -8,6 +9,16 @@ export const EVENT_NAMES = Object.freeze([
   'lines_cleared',
   'combo',
   'round_complete',
+  'daily_complete',
+  'app_open',
+  'onboarding_step',
+  'onboarding_complete',
+  'run_start',
+  'line_clear',
+  'run_end',
+  'daily_start',
+  'streak_update',
+  'freeze_earned',
   'game_over',
   'restart',
   'ad_break_shown',
@@ -48,7 +59,8 @@ export function createEvent(name, props = {}, now = Date.now) {
   }
   const clean = {};
   for (const [key, value] of Object.entries(props)) {
-    if (FORBIDDEN_PROP_KEYS.has(key.toLowerCase())) {
+    const normalized = key.toLowerCase();
+    if (FORBIDDEN_PROP_KEYS.has(normalized) || key.startsWith('$') || normalized.startsWith('mp_')) {
       throw new Error(`Forbidden analytics prop: ${key}`);
     }
     const type = typeof value;

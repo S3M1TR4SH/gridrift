@@ -2,19 +2,20 @@
   "ads": {
     "personalized": false,
     "interstitial": {
-      "enabled": true,
+      "enabled": false,
       "breaks": ["between_rounds", "game_over"],
       "minSecondsBetween": 120,
+      "intervalArms": [90, 120, 180],
       "minRoundsBetween": 2,
       "maxPerSession": 2,
       "nearControls": false,
       "controlSeparationPx": 96
     },
     "rewarded": {
-      "enabled": true,
+      "enabled": false,
       "optInOnly": true,
-      "placements": ["continue", "hint"],
-      "maxPerSession": 2,
+      "placements": ["continue", "hint", "reroll", "double_score"],
+      "maxPerSession": 3,
       "minSecondsBetween": 90
     }
   },
@@ -25,9 +26,9 @@
     "rampEveryClears": 4,
     "maxTier": 5,
     "pools": [
-      { "minTier": 0, "shapes": ["dot", "line2", "line3", "square", "corner"] },
-      { "minTier": 2, "shapes": ["line3", "line3v", "square", "s", "l", "corner"] },
-      { "minTier": 4, "shapes": ["line4", "s", "z", "l", "j", "t", "corner"] }
+      { "minTier": 0, "shapes": ["line3", "line3v", "line2", "line2v", "square", "corner"] },
+      { "minTier": 2, "shapes": ["line3", "l", "j", "t", "s", "z", "square", "u"] },
+      { "minTier": 4, "shapes": ["line4", "line4v", "line5", "plus", "rect", "corner3", "sTall", "zTall", "l", "j"] }
     ]
   },
   "privacy": {

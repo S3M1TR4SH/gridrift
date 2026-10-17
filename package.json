@@ -9,10 +9,10 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node --test",
-    "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js tests/shipped-config.test.js",
+    "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js studio-core/tests/ads.test.js studio-core/tests/mixpanel.test.js studio-core/tests/admob.test.js tests/shipped-config.test.js tests/analytics-adapter.test.js tests/play-release.test.js",
     "build": "node scripts/build-static.js",
     "icons": "node scripts/generate-icons.js",
-    "sim": "node studio-core/sim/cli.js --adapter sim/gridrift-adapter.js --variant control=config/pacing.json --variant quiet=sim/variants/quiet-ads.json --seeds 1,2 --personas casual,skilled,quitter,ad-averse --out sim/out",
+    "sim": "node studio-core/sim/cli.js --adapter sim/gridrift-adapter.js --variant quiet=sim/variants/quiet-ads.json --variant control=config/pacing.json --seeds 1,2 --personas casual,skilled,quitter,ad-averse --out sim/out",
     "analyze": "node studio-core/sim/analyze/cli.js --input sim/out/results.json --pacing config/pacing.json --tuning config/tuning.json --out sim/out/analysis --history sim/history/runs.jsonl",
     "analyze:trends": "node studio-core/sim/analyze/cli.js trends --history sim/history --out sim/out/analysis/trends.md"
   },

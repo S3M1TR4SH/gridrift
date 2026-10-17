@@ -26,4 +26,9 @@ for (const url of PRECACHE_URLS) {
   cpSync(join(root, relative), target);
 }
 
+const assetLinks = join(root, 'web/.well-known/assetlinks.json');
+const assetTarget = join(dist, '.well-known/assetlinks.json');
+mkdirSync(dirname(assetTarget), { recursive: true });
+cpSync(assetLinks, assetTarget);
+
 console.log(`Static build wrote ${PRECACHE_URLS.length - 1} files to dist/.`);
