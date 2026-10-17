@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node scripts/serve.js",
     "test": "node --test",
-    "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js tests/shipped-config.test.js",
+    "test:guardrails": "node --test studio-core/tests/guardrails.test.js studio-core/tests/pacing.test.js studio-core/tests/consent.test.js studio-core/tests/admob.test.js tests/shipped-config.test.js tests/play-release.test.js",
     "build": "node scripts/build-static.js",
     "icons": "node scripts/generate-icons.js"
   }

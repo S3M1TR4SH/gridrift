@@ -53,6 +53,17 @@ export function placeholderFor(id) {
   if (id.startsWith('sfx.')) {
     return { id, status: 'placeholder', placeholder: true, kind: 'sfx', synth: SFX[id] ?? 'click' };
   }
+  if (id.startsWith('fx.')) {
+    return {
+      id,
+      status: 'placeholder',
+      placeholder: true,
+      kind: 'fx',
+      draw: id.startsWith('fx.particle.') ? 'particle' : 'flash',
+      grayscale: id.startsWith('fx.particle.'),
+      color: '#d7e0ec'
+    };
+  }
   if (id.startsWith('icon.')) {
     return {
       id,

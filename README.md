@@ -70,4 +70,12 @@ This repository is not linked to a Vercel project, and nothing here deploys it.
 5. Build command: `npm run build`
 6. Output directory: `dist`
 
-`vercel.json` records those three settings and tells Vercel to serve `sw.js` with `Cache-Control: no-cache`. There are no environment variables to add. Do not point the project at an ad network.
+`vercel.json` records those three settings. It serves `sw.js` with `Cache-Control: no-cache`, and it serves `/.well-known/assetlinks.json` as `application/json`. The build copies that file from `web/.well-known/assetlinks.json` into `dist/`. There are no environment variables to add. Do not point the project at an ad network.
+
+## Google Play
+
+`android/` is a Bubblewrap Trusted Web Activity for the placeholder id `com.gridrift.app` and the placeholder origin `https://gridrift.vercel.app/`. This repo is not linked to Vercel or Play, and nothing here is submitted. The release keystore is not in git. `.github/workflows/android-aab.yml` signs an app bundle only when `ANDROID_KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD` are set. Otherwise it builds a debug bundle and skips release signing.
+
+`studio-core/ads/admob` can only use Google's demo ad units, and only through a native bridge. The web page and the TWA do not install that bridge, so the adapter no-ops. The Android project does not include the Mobile Ads SDK. `studio-core/docs/twa-ads.md` compares that with H5 Games Ads or AdSense.
+
+`store/` holds drafts for Data safety, the IARC questionnaire, and the listing. They are not uploaded.
