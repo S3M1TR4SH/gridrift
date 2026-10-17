@@ -39,7 +39,8 @@ An adapter module exports `createAdapter({ root })`. `root` is the host working 
 
 `listActions()` returns plain objects:
 
-- Move: `{ type: 'move', id, pieceIndex, x, y, lines, cells }`. `lines` is how many lines that placement would clear. `cells` is the piece size. Use `0` for either when the game cannot predict them. Higher `lines`, then higher `cells`, is the skilled choice.
+- Move: `{ type: 'move', id, pieceIndex, x, y, lines, cells, fill?, contact?, holes?, rest1?, rest2? }`. `lines` is how many lines that placement would clear. `cells` is the piece size. Use `0` for either when the game cannot predict them. Higher `lines`, then higher `cells`, is the legacy skilled choice.
+  Optional board features: `fill` is the fullest row or column the piece touches after placement; `contact` is occupied or wall neighbours; `holes` is enclosed empty cells after clears; `restN` is the best line total from placing the other visible tray pieces N deep, or `-1` if one of them cannot be placed. Personas with `placement: 'human'` use these fields when they are present and fall back to `lines` and `cells` otherwise.
 - UI: `{ type: 'ui', id, uiId, label }`. `uiId` is what `perform` should activate.
 
 ### What the runner records
@@ -62,7 +63,14 @@ Built in: `casual`, `skilled`, `quitter`, `ad-averse`.
 
 | Param | Meaning |
 | --- | --- |
-| `skill` | Chance to take the highest-line legal move. Otherwise a legal move is uniform. |
+| `placement` | `human` (default) or `legacy`. Human scores the optional move features. Legacy uses `skill`. |
+| `skill` | Legacy only. Chance to take the highest-line legal move. Otherwise a legal move is uniform. |
+| `lookahead` | Human only. `1` reads `rest1`. `2` reads `rest2` when the adapter sent it. |
+| `lookProb` | Human only. Chance to apply that lookahead on a move. |
+| `wFill`, `wContact`, `wHoles`, `wNear` | Human weights. Holes and distance from the previous drop lower the score. |
+| `noise` | Human only. Seeded jitter added to each move score. |
+| `blunderRate` | Human only. Chance to take one of the top `blunderTopK` moves instead of the best. Never a uniform legal spot. |
+| `blunderTopK` | How many ranked moves a blunder may choose. |
 | `frustrationThreshold` | Quit when frustration reaches this value. |
 | `frustrationDecay` | Subtracted from frustration on each mood tick. |
 | `noFitGain` | Added when play is open and no move fits. |
@@ -93,7 +101,15 @@ From the CLI, `--persona-file overrides.json` merges the same fields. The file i
 { "quitter": { "boredomMoves": 2 } }
 ```
 
-Quit decisions are deterministic from the board. Skill, ads, continues, restarts, hints, and analytics still draw from `mulberry32(seed)`. Frustration starts at 0. Each tick subtracts `frustrationDecay`, then adds `noFitGain` or `failedGain` when that event happened. A clear resets the boredom counter and still decays frustration. A restart, or a board that leaves the failed state, resets both. Ad-averse leaves when `adCount` reaches `adQuitAfter`. Other personas do not quit just because an ad is on screen.
+Quit decisions are deterministic from the board. Placement, ads, continues, restarts, hints, and analytics still draw from `mulberry32(seed)`. The same seed repeats the same placements. Changing `placement` changes the draw order, so an old seed will not repeat a run made before that change.
+
+The default weights and think times live in `calibration/human.json` and are applied to these four personas. That file is host-agnostic: it only names policy fields. A host that wants the old rule passes `placement: "legacy"`:
+
+```json
+{ "casual": { "placement": "legacy" } }
+```
+
+Human scoring, highest first: lines, then visible-tray lookahead, then fill and contact, minus holes and distance from the last successful drop, plus seeded noise. A blunder picks inside the top few, not from every legal cell. Frustration starts at 0. Each tick subtracts `frustrationDecay`, then adds `noFitGain` or `failedGain` when that event happened. A clear resets the boredom counter and still decays frustration. A restart, or a board that leaves the failed state, resets both. A restart also forgets the last drop. Ad-averse leaves when `adCount` reaches `adQuitAfter`. Other personas do not quit just because an ad is on screen.
 
 ## Compare variants
 

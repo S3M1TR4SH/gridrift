@@ -52,7 +52,7 @@ test('chooseAction is stable for a seed and can pick different moves', () => {
 });
 
 test('a perfect skill rating takes the clearer move', () => {
-  const persona = resolvePersona('skilled', { skill: 1, hintRate: 0 });
+  const persona = resolvePersona('skilled', { placement: 'legacy', skill: 1, hintRate: 0 });
   const decision = chooseAction({
     persona,
     state: {
@@ -71,6 +71,121 @@ test('a perfect skill rating takes the clearer move', () => {
   });
   assert.equal(decision.type, 'action');
   assert.equal(decision.action.id, 'high');
+});
+
+test('the default human policy uses the calibration file and keeps legacy selectable', () => {
+  const casual = resolvePersona('casual');
+  assert.equal(casual.placement, 'human');
+  assert.equal(casual.lookahead, 1);
+  assert.equal(casual.thinkMs, 3500);
+  assert.equal(resolvePersona('skilled').lookahead, 2);
+  assert.equal(resolvePersona('skilled').thinkMs, 2200);
+  assert.equal(resolvePersona('quitter').blunderRate, 0.2);
+  assert.equal(resolvePersona('ad-averse').lookProb, 0.8);
+  const legacy = resolvePersona('casual', { placement: 'legacy' });
+  assert.equal(legacy.placement, 'legacy');
+  assert.equal(legacy.skill, 0.35);
+});
+
+function playState(actions) {
+  return {
+    screen: 'play',
+    failed: false,
+    ended: false,
+    ad: null,
+    actions
+  };
+}
+
+test('human placement prefers a clear, visible-tray room, and a nearby spot', () => {
+  const persona = resolvePersona('casual', {
+    lookahead: 1,
+    lookProb: 1,
+    noise: 0,
+    blunderRate: 0,
+    hintRate: 0,
+    wFill: 0,
+    wContact: 0,
+    wHoles: 0,
+    wNear: 2
+  });
+  const clearer = chooseAction({
+    persona,
+    state: playState([
+      { type: 'move', id: 'big', pieceIndex: 0, x: 0, y: 0, lines: 0, cells: 9, rest1: 0 },
+      { type: 'move', id: 'clear', pieceIndex: 1, x: 4, y: 4, lines: 1, cells: 1, rest1: 0 }
+    ]),
+    rng: mulberry32(1),
+    restarts: 0
+  });
+  assert.equal(clearer.action.id, 'clear');
+
+  const room = chooseAction({
+    persona,
+    state: playState([
+      { type: 'move', id: 'strand', pieceIndex: 0, x: 0, y: 0, lines: 0, cells: 1, rest1: -1 },
+      { type: 'move', id: 'keep', pieceIndex: 1, x: 2, y: 2, lines: 0, cells: 1, rest1: 1 }
+    ]),
+    rng: mulberry32(1),
+    restarts: 0
+  });
+  assert.equal(room.action.id, 'keep');
+
+  const near = chooseAction({
+    persona,
+    state: playState([
+      { type: 'move', id: 'far', pieceIndex: 0, x: 5, y: 5, lines: 0, cells: 1, rest1: 0 },
+      { type: 'move', id: 'close', pieceIndex: 0, x: 1, y: 0, lines: 0, cells: 1, rest1: 0 }
+    ]),
+    rng: mulberry32(1),
+    lastMove: { x: 0, y: 0 },
+    restarts: 0
+  });
+  assert.equal(near.action.id, 'close');
+
+  const same = chooseAction({
+    persona,
+    state: playState([
+      { type: 'move', id: 'far', pieceIndex: 0, x: 5, y: 5, lines: 0, cells: 1, rest1: 0 },
+      { type: 'move', id: 'close', pieceIndex: 0, x: 1, y: 0, lines: 0, cells: 1, rest1: 0 }
+    ]),
+    rng: mulberry32(1),
+    lastMove: { x: 0, y: 0 },
+    restarts: 0
+  });
+  assert.deepEqual(near, same);
+});
+
+test('a human blunder stays inside the top moves', () => {
+  const persona = resolvePersona('skilled', {
+    lookahead: 0,
+    noise: 0,
+    blunderRate: 1,
+    blunderTopK: 2,
+    hintRate: 0,
+    wFill: 0,
+    wContact: 0,
+    wHoles: 0,
+    wNear: 0
+  });
+  const actions = [
+    { type: 'move', id: 'best', pieceIndex: 0, x: 0, y: 0, lines: 3, cells: 1 },
+    { type: 'move', id: 'ok', pieceIndex: 0, x: 1, y: 0, lines: 1, cells: 1 },
+    { type: 'move', id: 'worst', pieceIndex: 0, x: 2, y: 0, lines: 0, cells: 1 }
+  ];
+  const picks = new Set();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    const decision = chooseAction({
+      persona,
+      state: playState(actions),
+      rng: mulberry32(seed),
+      restarts: 0
+    });
+    picks.add(decision.action.id);
+  }
+  assert.equal(picks.has('worst'), false);
+  assert.equal(picks.has('best'), true);
+  assert.equal(picks.has('ok'), true);
 });
 
 test('ad-averse retention drops further than skilled retention for the same ads', () => {

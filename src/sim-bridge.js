@@ -1,6 +1,59 @@
-import { canPlace, cellCount, findClears, paint } from './logic.js';
+import { applyClears, canPlace, cellCount, findClears, paint } from './logic.js';
 
-export function listMoves(board, pieces) {
+const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+function moveFeatures(board, shape, x, y) {
+  const size = board.length;
+  const painted = paint(board, shape, x, y, 1);
+  let fill = 0;
+  let contact = 0;
+  shape.forEach((row, dy) => row.forEach((cell, dx) => {
+    if (!cell) return;
+    const cy = y + dy;
+    const cx = x + dx;
+    fill = Math.max(fill, painted[cy].filter(Boolean).length, painted.filter((line) => line[cx]).length);
+    for (const [ox, oy] of N4) {
+      const nx = cx + ox;
+      const ny = cy + oy;
+      if (nx < 0 || ny < 0 || nx >= size || ny >= size || board[ny][nx]) contact += 1;
+    }
+  }));
+  const after = applyClears(painted, findClears(painted));
+  let holes = 0;
+  for (let yy = 0; yy < size; yy += 1) {
+    for (let xx = 0; xx < size; xx += 1) {
+      if (after[yy][xx]) continue;
+      const enclosed = N4.every(([ox, oy]) => {
+        const nx = xx + ox;
+        const ny = yy + oy;
+        return nx < 0 || ny < 0 || nx >= size || ny >= size || after[ny][nx];
+      });
+      if (enclosed) holes += 1;
+    }
+  }
+  return { fill, contact, holes, after };
+}
+
+function restValue(board, pieces, used, depth) {
+  const rest = pieces.map((piece, index) => index).filter((index) => pieces[index] && !used.includes(index));
+  if (!rest.length || depth <= 0) return 0;
+  let best = -1;
+  for (const index of rest) {
+    const shape = pieces[index].shape;
+    for (let y = 0; y <= board.length - shape.length; y += 1) {
+      for (let x = 0; x <= board[0].length - shape[0].length; x += 1) {
+        if (!canPlace(board, shape, x, y)) continue;
+        const painted = paint(board, shape, x, y, 1);
+        const found = findClears(painted);
+        const next = restValue(applyClears(painted, found), pieces, [...used, index], depth - 1);
+        if (next >= 0) best = Math.max(best, found.rows.length + found.cols.length + next);
+      }
+    }
+  }
+  return best;
+}
+
+export function listMoves(board, pieces, { lookahead = 2 } = {}) {
   const moves = [];
   pieces.forEach((piece, pieceIndex) => {
     const shape = piece?.shape;
@@ -8,7 +61,9 @@ export function listMoves(board, pieces) {
     for (let y = 0; y <= board.length - shape.length; y += 1) {
       for (let x = 0; x <= board[0].length - shape[0].length; x += 1) {
         if (!canPlace(board, shape, x, y)) continue;
-        const found = findClears(paint(board, shape, x, y, 1));
+        const painted = paint(board, shape, x, y, 1);
+        const found = findClears(painted);
+        const feat = moveFeatures(board, shape, x, y);
         moves.push({
           type: 'move',
           id: `move-${pieceIndex}-${x}-${y}`,
@@ -16,7 +71,12 @@ export function listMoves(board, pieces) {
           x,
           y,
           lines: found.rows.length + found.cols.length,
-          cells: cellCount(shape)
+          cells: cellCount(shape),
+          fill: feat.fill,
+          contact: feat.contact,
+          holes: feat.holes,
+          rest1: restValue(feat.after, pieces, [pieceIndex], 1),
+          rest2: lookahead >= 2 ? restValue(feat.after, pieces, [pieceIndex], 2) : null
         });
       }
     }

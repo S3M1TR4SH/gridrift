@@ -87,6 +87,7 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
     retention: null
   };
   let restarts = 0;
+  let lastMove = null;
   let mood = freshMood();
   await adapter.start({ seed, variant, persona: persona.id });
   try {
@@ -105,7 +106,8 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
         mood,
         gameOver: gameOver === true,
         adCount: log.adMoments.length,
-        restarts
+        restarts,
+        lastMove
       });
       mood = decision.mood ?? mood;
       const elapsed = thinkTime(persona);
@@ -121,9 +123,11 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
         continue;
       }
       const outcome = await adapter.perform(decision.action);
+      if (decision.action?.type === 'move' && outcome?.ok !== false) lastMove = decision.action;
       const restarted = decision.action?.uiId === 'restart' || decision.action?.id === 'restart';
       if (restarted) {
         restarts += 1;
+        lastMove = null;
         mood = tickMood(persona, mood, 'reset');
       }
       log.steps += 1;
