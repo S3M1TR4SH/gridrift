@@ -1,4 +1,4 @@
-export const CACHE_NAME = 'gridrift-0.1.0';
+export const CACHE_NAME = 'gridrift-0.1.1';
 
 export const PRECACHE_URLS = [
   './',
@@ -24,11 +24,13 @@ export const PRECACHE_URLS = [
   './studio-core/pacing/pacer.js',
   './studio-core/analytics/schema.js',
   './studio-core/analytics/tracker.js',
+  './studio-core/analytics/adapters/mixpanel.js',
   './studio-core/consent/age-gate.js',
   './studio-core/pwa/install.js',
   './studio-core/pwa/sw.js',
   './config/tuning.json',
   './config/pacing.json',
+  './config/analytics.json',
   './levels/round-01.json',
   './levels/round-02.json',
   './levels/round-03.json',

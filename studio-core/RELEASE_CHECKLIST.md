@@ -9,11 +9,11 @@ This folder is self-contained. It must not import game code, asset libraries, ad
 - [ ] A search of this folder finds no imports of the host game (`src/`, `config/`, `levels/`, `branding/`, or the game name).
 - [ ] `guardrails/limits.js` is still hard-coded. No limit reads from game config.
 - [ ] `validateGameConfig` rejects pacing that exceeds those limits, including an over-limit fixture in the host test suite.
-- [ ] Analytics events use `analytics/schema.js` only. The tracker drops events until consent, and `transmit()` does not perform network I/O.
+- [ ] Analytics events use `analytics/schema.js` only. The tracker drops events until consent, and `transmit()` does not perform network I/O. A provider adapter is optional and is passed in by the host. It must not load a script until `start()` after adult consent. Under-13 calls `block()` and never loads a provider.
 - [ ] Age gate treats under-13 players as children: no ads, no analytics, and stored consent cannot turn those on.
 - [ ] Rewarded placements stay opt-in (`continue` and `hint` only). Interstitials stay on `game_over` and `between_rounds`.
 - [ ] PWA helpers do not fetch third-party URLs. The host supplies same-origin precache URLs and generated icons.
-- [ ] No ad SDK, API key, tracking URL, or absolute `http(s)` endpoint was added.
+- [ ] No ad SDK, API key, or tracking URL was added to config. The optional analytics adapter may name a provider script URL and must not request it at import time.
 
 ## Extracting to its own repo
 

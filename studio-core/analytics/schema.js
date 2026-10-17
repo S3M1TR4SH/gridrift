@@ -48,7 +48,8 @@ export function createEvent(name, props = {}, now = Date.now) {
   }
   const clean = {};
   for (const [key, value] of Object.entries(props)) {
-    if (FORBIDDEN_PROP_KEYS.has(key.toLowerCase())) {
+    const normalized = key.toLowerCase();
+    if (FORBIDDEN_PROP_KEYS.has(normalized) || key.startsWith('$') || normalized.startsWith('mp_')) {
       throw new Error(`Forbidden analytics prop: ${key}`);
     }
     const type = typeof value;

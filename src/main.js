@@ -1,7 +1,9 @@
 import assetManifest from '../assets.manifest.json' with { type: 'json' };
 import brand from '../branding/brand.json' with { type: 'json' };
+import analyticsConfig from '../config/analytics.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
+import { createMixpanelAdapter } from '../studio-core/analytics/adapters/mixpanel.js';
 import { createTracker } from '../studio-core/analytics/tracker.js';
 import {
   applyAnalyticsChoice,
@@ -73,7 +75,11 @@ function start() {
 
   const consentStore = createConsentStore(bootStorage());
   let consent = consentStore.load();
-  const tracker = createTracker({ getConsent: () => consent });
+  const tracker = createTracker({
+    getConsent: () => consent,
+    adapter: createMixpanelAdapter({ token: analyticsConfig.token })
+  });
+  void tracker.sync();
   const pacer = createPacer({ pacing, isChild: () => Boolean(consent?.isChild) });
   const audio = createAudio(registry);
   const install = createInstallController();
@@ -220,6 +226,7 @@ function start() {
     }
     if (id === 'age_under') {
       consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      void tracker.sync();
       show({ screen: 'kid_mode' });
       return;
     }
@@ -233,8 +240,15 @@ function start() {
       const choice = id === 'analytics_yes' ? 'granted' : 'denied';
       consent = consentStore.save(applyAnalyticsChoice(consent, choice));
       overlay = null;
+      void tracker.sync();
       tracker.track('consent_updated', { granted: choice === 'granted' });
       publishOverlay(true);
+      return;
+    }
+    if (id === 'analytics_revoke') {
+      if (!consent || consent.isChild || !consent.analyticsAllowed) return;
+      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      void tracker.sync();
       return;
     }
     if (id === 'start_play') {
@@ -461,6 +475,7 @@ function start() {
       target: state.targetClears,
       hint: screen() === 'play' && !consent?.isChild && pacer.canOfferRewarded('hint'),
       install: install.available && screen() === 'play',
+      stats: screen() === 'play' && Boolean(consent && !consent.isChild && consent.analyticsAllowed),
       muted: audio.muted
     });
     publishOverlay(false);

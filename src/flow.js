@@ -57,7 +57,7 @@ export function viewModel(model) {
     return {
       screen: 'analytics_consent',
       title: 'Keep stats on this device?',
-      body: 'Optional. Counts stay in this browser. Nothing is sent over the network.',
+      body: 'Optional anonymous play counts. Mixpanel loads only if you allow it. No name or email is sent.',
       adSlot: false,
       actions: [
         { id: 'analytics_yes', label: 'Allow on this device', slot: 'upper' },

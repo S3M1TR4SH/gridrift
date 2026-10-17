@@ -7,6 +7,7 @@ export function createUi(doc = document) {
   const combo = doc.querySelector('#combo');
   const hint = doc.querySelector('#hint');
   const install = doc.querySelector('#install');
+  const stats = doc.querySelector('#stats-opt-out');
   const mute = doc.querySelector('#mute');
   const title = doc.querySelector('#title');
   let onAction = () => {};
@@ -18,6 +19,7 @@ export function createUi(doc = document) {
   });
   hint.addEventListener('click', () => onAction('offer_hint'));
   install.addEventListener('click', () => onAction('install'));
+  if (stats) stats.addEventListener('click', () => onAction('analytics_revoke'));
   mute.addEventListener('click', () => onAction('mute'));
 
   function button(action) {
@@ -45,6 +47,7 @@ export function createUi(doc = document) {
       combo.textContent = hud.combo >= 2 ? `Combo ${hud.combo}` : '';
       hint.hidden = !hud.hint;
       install.hidden = !hud.install;
+      if (stats) stats.hidden = !hud.stats;
       mute.textContent = hud.muted ? 'Unmute' : 'Mute';
       mute.setAttribute('aria-pressed', hud.muted ? 'true' : 'false');
     },

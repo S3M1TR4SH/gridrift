@@ -2,7 +2,7 @@
 
 Gridrift is a small HTML5 canvas puzzle. Drag pieces onto the grid, clear full rows and columns, and chain a streak. The board is a 10 by 10 grid. Rounds raise a clear target, then the same board continues.
 
-Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.1.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
+Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.2.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
 
 ## Dev setup
 
@@ -55,7 +55,7 @@ Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Promp
 
 Ads are placeholder hooks. There is no ad SDK, no key, and no ad request. A full-screen placeholder can appear between rounds or, when a continue offer is not available, after a game over. The close control sits away from the button that opened it. Rewarded continue and hint ads are opt-in, and declining them always returns to a playable choice. Restart is always available.
 
-The age gate treats players under 13 as children: no ads and no analytics. Everyone else sees an opt-in for on-device stats. Until that opt-in, events are dropped. The tracker has no send path.
+The age gate treats players under 13 as children: no ads and no analytics. Mixpanel is never loaded for them. Everyone else sees an opt-in. The public project token lives only in `config/analytics.json`. The game passes that token into `studio-core/analytics/adapters/mixpanel.js`. The studio-core tracker stays provider-agnostic, keeps the standard event names, and still drops events until consent. The adapter does not inject the Mixpanel script until an adult allows stats. Init turns off IP geolocation, autocapture, pageviews, and session replay, and it does not set a name, email, or profile. "No thanks", or "Stop stats" after allowing, calls `opt_out_tracking` when the library was loaded. Denying before it loads does not load it just to opt out.
 
 `npm test` fails if `config/pacing.json` or `config/tuning.json` exceeds a guardrail. The suite includes an over-limit config so that check is not a no-op. GitHub Actions runs the same command.
 

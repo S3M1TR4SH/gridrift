@@ -12,7 +12,7 @@ test('the shipped manifest keeps the asset-library pin and string ids', () => {
   const raw = readFileSync(join(root, 'assets.manifest.json'), 'utf8');
   assert.equal(raw.includes('https://'), false);
   assert.equal(manifest.library.repo, 'S3M1TR4SH/asset-library');
-  assert.equal(manifest.library.tag, 'v0.1.0');
+  assert.equal(manifest.library.tag, 'v0.2.0');
   assert.ok(manifest.assets.includes('sfx.place'));
   assert.ok(manifest.assets.includes('icon.gridrift.icon-192'));
   assert.ok(manifest.assets.includes('icon.gridrift.icon-512'));
@@ -21,7 +21,7 @@ test('the shipped manifest keeps the asset-library pin and string ids', () => {
 
 test('missing library files resolve to drawn placeholders', () => {
   const registry = loadAssets(manifest);
-  assert.equal(registry.library.tag, 'v0.1.0');
+  assert.equal(registry.library.tag, 'v0.2.0');
   for (const id of manifest.assets) {
     const asset = registry.get(id);
     assert.equal(asset.placeholder, true, id);
