@@ -1,0 +1,10 @@
+{
+  "name": "studio-new-game",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Genre shell. Replace src/genre.js. Guardrail tests stay on the studio-core suite.",
+  "scripts": {
+    "test": "node --test tests/shell.test.js ../../tests/guardrails.test.js ../../tests/pacing.test.js ../../tests/consent.test.js ../../tests/ads.test.js ../../tests/admob.test.js"
+  }
+}

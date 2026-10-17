@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>New game</title>
+</head>
+<body>
+  <p id="status">Loading</p>
+  <script type="module">
+    import { bootShell } from './game/shell.js';
+    const pacing = await fetch('./config/pacing.json').then((response) => response.json());
+    const tuning = await fetch('./config/tuning.json').then((response) => response.json());
+    const shell = bootShell({ pacing, tuning });
+    document.querySelector('#status').textContent = shell.genre.title;
+  </script>
+</body>
+</html>

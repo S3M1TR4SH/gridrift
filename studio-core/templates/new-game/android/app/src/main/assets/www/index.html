@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Studio Shell</title>
+</head>
+<body>
+  <p>Pack the game into this asset folder. Ads stay off until the page installs a synchronous bridge.</p>
+  <script>
+    window.__studioAdsBridge = {
+      showInterstitial() {
+        return { shown: false, rewarded: false, reason: 'noop' };
+      },
+      showRewarded() {
+        return { shown: false, rewarded: false, reason: 'noop' };
+      }
+    };
+  </script>
+</body>
+</html>

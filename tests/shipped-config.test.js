@@ -5,8 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import pacing from '../config/pacing.json' with { type: 'json' };
 import tuning from '../config/tuning.json' with { type: 'json' };
-import { LIMITS } from '../studio-core/guardrails/limits.js';
-import { findUnsafeLiterals, validateGameConfig } from '../studio-core/guardrails/validate.js';
+import { findUnsafeLiterals, LIMITS, validateGameConfig } from '../studio-core/index.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 

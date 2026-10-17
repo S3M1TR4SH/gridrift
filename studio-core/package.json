@@ -1,9 +1,13 @@
 {
   "name": "@studio/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Self-contained studio core: guardrails, pacing, consent, analytics, and PWA helpers. No game imports.",
+  "description": "Self-contained studio shell: PWA, ads, consent, pacing, guardrails, and analytics. Games import the public API only.",
+  "exports": {
+    ".": "./index.js",
+    "./sim": "./sim/index.js"
+  },
   "scripts": {
     "test": "node --test"
   }

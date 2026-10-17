@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import pacing from '../config/pacing.json' with { type: 'json' };
 import tuning from '../config/tuning.json' with { type: 'json' };
 import { PRECACHE_URLS } from '../src/precache.js';
-import { validateGameConfig } from '../studio-core/guardrails/validate.js';
+import { validateGameConfig } from '../studio-core/index.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const result = validateGameConfig({ pacing, tuning });

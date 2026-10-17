@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import tuning from '../config/tuning.json' with { type: 'json' };
 import { createBoard } from '../src/logic.js';
 import { detectGameOver, listMoves } from '../src/sim-bridge.js';
-import { validateGameConfig } from '../studio-core/guardrails/validate.js';
+import { validateGameConfig } from '../studio-core/index.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 

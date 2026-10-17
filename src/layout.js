@@ -1,4 +1,4 @@
-import { LIMITS } from '../studio-core/guardrails/limits.js';
+import { LIMITS } from '../studio-core/index.js';
 
 export const CONTROL_GAP_PX = 96;
 
