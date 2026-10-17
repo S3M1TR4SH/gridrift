@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appName">Gridrift</string>
+    <string name="hostName">gridrift.vercel.app</string>
+    <string name="launchUrl">https://gridrift.vercel.app/</string>
+    <string name="providerAuthority">com.gridrift.app.fileprovider</string>
+    <string name="assetStatements">
+        [{
+            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+            \"target\": {
+                \"namespace\": \"web\",
+                \"site\": \"https://gridrift.vercel.app\"
+            }
+        }]
+    </string>
+</resources>

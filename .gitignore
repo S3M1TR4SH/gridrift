@@ -3,3 +3,8 @@ dist/
 sim/out/
 sim/history/*.jsonl
 .DS_Store
+*.keystore
+*.jks
+android/.gradle/
+android/local.properties
+android/app/build/
