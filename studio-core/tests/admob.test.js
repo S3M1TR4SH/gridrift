@@ -133,6 +133,51 @@ test('guardrails block the bridge for children, bad breaks, and missing opt-in',
   const reward = adult.ads.showRewarded({ placement: 'hint', optedIn: true });
   assert.deepEqual(reward, { shown: true, rewarded: true, reason: 'bridge' });
   assert.equal(adult.calls[1].request.adUnitId, OFFICIAL.rewarded);
+  assert.equal(adult.calls[1].request.tagForChildDirectedTreatment, undefined);
+  assert.equal(adult.calls[1].request.npa, undefined);
+});
+
+test('under-13 AdMob requests stay on demo units and are non-personalized', () => {
+  const childPacing = pacing();
+  childPacing.privacy = { childrenAdsAllowed: true, personalizedAds: false };
+  childPacing.ads.personalized = false;
+  let now = 1_000_000;
+  const calls = [];
+  const host = {
+    __studioAdsBridge: {
+      showInterstitial(request) {
+        calls.push(request);
+        return { shown: true, rewarded: false, reason: 'bridge' };
+      },
+      showRewarded(request) {
+        calls.push(request);
+        return { shown: true, rewarded: true, reason: 'bridge' };
+      }
+    }
+  };
+  const ads = createGuardedAds({
+    adapter: createAdMobAdapter({
+      bridge: createWebAdBridge(host),
+      childDirected: () => true
+    }),
+    pacer: createPacer({ pacing: childPacing, now: () => now, isChild: () => true })
+  });
+  assert.equal(ads.showInterstitial({ breakType: 'between_rounds' }).shown, true);
+  assert.deepEqual(calls[0], {
+    format: 'interstitial',
+    appId: OFFICIAL.appId,
+    adUnitId: OFFICIAL.interstitial,
+    tagForChildDirectedTreatment: true,
+    maxAdContentRating: 'G',
+    npa: true
+  });
+  now += 120_000;
+  assert.equal(ads.showRewarded({ placement: 'hint', optedIn: true }).shown, true);
+  assert.equal(calls[1].adUnitId, OFFICIAL.rewarded);
+  assert.equal(calls[1].npa, true);
+  assert.equal(calls[1].maxAdContentRating, 'G');
+  assert.equal(Object.hasOwn(calls[1], 'deviceId'), false);
+  assert.equal(Object.hasOwn(calls[1], 'advertisingId'), false);
 });
 
 test('a promised bridge result is not treated as a shown ad', () => {

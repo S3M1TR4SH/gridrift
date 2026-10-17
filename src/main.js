@@ -7,7 +7,6 @@ import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
 import {
   applyAnalyticsChoice,
-  canNotify,
   celebrationLevel,
   consentFromBirthYear,
   createAdMobAdapter,
@@ -31,21 +30,22 @@ import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
 import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';
 import {
+  HINT_MIN_MOVES,
   INPUT_GUARD_MS,
   agePrompt,
   canOfferContinue,
   canOfferDouble,
   canOfferHint,
   canOfferReroll,
+  settleGameOver,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
   shouldIgnoreInput,
-  viewModel,
-  welcomeCopy
+  viewModel
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
-import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
+import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerToBoard, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { dangerCue, dropFeedback, placementCount, roundClearedNotice } from './danger.js';
 import { easedRun, generateTray, goalForRound, gridForRound } from './difficulty.js';
@@ -99,6 +99,7 @@ function start() {
   document.documentElement.style.setProperty('--accent', registry.get('ui.button_rectangle_flat.blue').color);
   document.body.style.fontFamily = registry.get('font.kenney-future').family;
 
+  const simClock = new URLSearchParams(window.location.search).has('sim');
   const storage = bootStorage();
   const saveStore = createSaveStore(storage);
   let progress = saveStore.load();
@@ -112,16 +113,16 @@ function start() {
   void tracker.sync();
   const pacer = createPacer({
     pacing,
-    isChild: () => !consent || Boolean(consent.isChild),
+    isChild: () => Boolean(consent?.isChild),
     sessionNumber: (progress.sessions || 0) + 1
   });
   const adBridge = createWebAdBridge();
   const noopAds = createNoopAdapter();
-  const h5Ads = createH5GamesAdsAdapter();
-  const admobAds = createAdMobAdapter({ bridge: adBridge });
+  const childDirected = () => Boolean(consent?.isChild);
+  const h5Ads = createH5GamesAdsAdapter({ childDirected });
+  const admobAds = createAdMobAdapter({ bridge: adBridge, childDirected });
   function liveAdapter() {
-    if (!consent?.birthYear || consent.isChild || consent.adsAllowed === false || !pacing.ads?.testMode) return noopAds;
-    if (canNotify(consent) === false && consent.isChild) return noopAds;
+    if (!consent?.birthYear || consent.adsAllowed === false || pacing.ads?.testMode !== true) return noopAds;
     return adBridge.available ? admobAds : h5Ads;
   }
   const ads = createGuardedAds({
@@ -193,7 +194,35 @@ function start() {
   let assistDealsLeft = 0;
   let roundNoticeUntil = 0;
   let lastDangerLevel = 0;
+  let pendingGameOver = null;
+  let checkpoint = progress.run?.checkpoint ?? null;
   const roundNotice = roundClearedNotice();
+
+  function offerFloor() {
+    return tuning.rewardedMinMoves ?? HINT_MIN_MOVES;
+  }
+
+  function rememberCheckpoint() {
+    const state = match.state;
+    checkpoint = {
+      round: roundNumber(),
+      levelIndex,
+      mode,
+      grid: state.grid,
+      board: state.board.map((row) => row.slice()),
+      pieces: state.pieces.map((piece) => (piece ? {
+        shapeName: piece.shapeName,
+        color: piece.color,
+        tileId: piece.tileId
+      } : null)),
+      score: state.score,
+      streak: state.streak,
+      bestStreak: state.bestStreak,
+      roundClears: state.roundClears,
+      totalClears: state.totalClears,
+      targetClears: state.targetClears
+    };
+  }
 
   function roundNumber() {
     return levelIndex + 1;
@@ -253,7 +282,7 @@ function start() {
             score: state.score,
             totalClears: state.totalClears,
             assistDealsLeft
-          }, { mercy: easyRun });
+          }, { mercy: easyRun, cfg: difficultyConfig });
           const out = generateTray({
             board,
             run,
@@ -314,6 +343,7 @@ function start() {
     match = freshOpening();
     match.showHint();
   } else match = makeMatch();
+  if (!progress.run) rememberCheckpoint();
 
   function trackRunStart() {
     tracker.track('run_start', {
@@ -365,8 +395,21 @@ function start() {
 
   function persist() {
     const state = match.state;
+    const today = formatLocalDate(new Date());
+    const bestScore = Math.max(progress.bestScore || 0, state.score);
+    let yesterdayBest = progress.yesterdayBest || 0;
+    let dayBest = progress.dayBest || 0;
+    if (progress.bestDay && progress.bestDay !== today) {
+      yesterdayBest = dayBest || progress.bestScore || 0;
+      dayBest = state.score;
+    } else {
+      dayBest = Math.max(dayBest, state.score);
+    }
     progress = saveStore.save({
-      bestScore: Math.max(progress.bestScore || 0, state.score),
+      bestScore,
+      yesterdayBest,
+      dayBest,
+      bestDay: today,
       tutorialSeen: progress.tutorialSeen === true,
       sessions,
       installDay,
@@ -398,7 +441,8 @@ function start() {
         sawStuck,
         mode,
         dryMoves: state.dryMoves,
-        phase: state.phase
+        phase: state.phase,
+        checkpoint
       }
     });
   }
@@ -411,7 +455,8 @@ function start() {
       now: Date.now(),
       minAwayMinutes: away.minAwayMinutes
     }));
-    if (!welcomeOpen) overlay = null;
+    if (welcomeOpen) overlay = { screen: 'welcome_back' };
+    else if (!overlay || overlay.screen === 'welcome_back') overlay = null;
     publishOverlay(true);
   }
 
@@ -465,11 +510,12 @@ function start() {
   }
 
   function doubleReady() {
-    if (consent?.isChild) return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('double_score')) return false;
     return canOfferDouble({
       doublesUsed,
+      moves,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('double_score')
     });
   }
@@ -593,6 +639,7 @@ function start() {
     }
     overlay = null;
     if (!pointer.drag) pointer = createPointerState();
+    rememberCheckpoint();
     tracker.track('round_start', { round: level().id });
     tap();
     persist();
@@ -612,7 +659,7 @@ function start() {
   }
 
   function hintReady() {
-    if (screen() !== 'play' || consent?.isChild) return false;
+    if (screen() !== 'play') return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return false;
     return canOfferHint({
@@ -620,20 +667,54 @@ function start() {
       stuck: sawStuck,
       hintsUsed,
       moves,
-      minMoves: tuning.hintMinMoves ?? 15,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('hint')
     });
   }
 
   function rerollReady() {
-    if (screen() !== 'play' || consent?.isChild) return false;
+    if (screen() !== 'play') return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('reroll')) return false;
     return canOfferReroll({
       stuck: isStuck(match.state.board, match.state.pieces),
       rerollsUsed,
+      moves,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('reroll')
     });
+  }
+
+  function retryRound() {
+    if (!checkpoint) {
+      restart();
+      return;
+    }
+    levelIndex = checkpoint.levelIndex || 0;
+    mode = checkpoint.mode || 'arcade';
+    welcomeOpen = false;
+    resetRunCounters();
+    rewardKind = null;
+    match = makeMatch({
+      board: checkpoint.board,
+      pieces: checkpoint.pieces,
+      score: checkpoint.score,
+      streak: checkpoint.streak,
+      bestStreak: checkpoint.bestStreak,
+      roundClears: checkpoint.roundClears,
+      totalClears: checkpoint.totalClears,
+      phase: 'playing',
+      targetClears: checkpoint.targetClears
+    });
+    moves = 0;
+    overlay = null;
+    pointer = createPointerState();
+    pendingGameOver = null;
+    armIgnore();
+    tracker.track('restart', { round: checkpoint.round });
+    trackRunStart();
+    tap();
+    persist();
   }
 
   function restart() {
@@ -648,6 +729,8 @@ function start() {
     moves = 0;
     overlay = null;
     pointer = createPointerState();
+    pendingGameOver = null;
+    rememberCheckpoint();
     armIgnore();
     tracker.track('restart', {});
     trackRunStart();
@@ -826,6 +909,8 @@ function start() {
       moves = 0;
       pointer = createPointerState();
       overlay = null;
+      welcomeOpen = false;
+      rememberCheckpoint();
       armIgnore();
       tap();
       tracker.track('daily_start', { seed: utcSeed() });
@@ -844,6 +929,8 @@ function start() {
       match = makeMatch();
       moves = 0;
       pointer = createPointerState();
+      welcomeOpen = false;
+      rememberCheckpoint();
       tap();
       overlay = null;
       armIgnore();
@@ -879,6 +966,10 @@ function start() {
       restart();
       return;
     }
+    if (id === 'retry_round') {
+      retryRound();
+      return;
+    }
     if (id === 'offer_continue' || id === 'offer_hint' || id === 'offer_reroll' || id === 'offer_double') {
       const kind = id === 'offer_hint'
         ? 'hint'
@@ -890,7 +981,7 @@ function start() {
       if (kind === 'hint' && !hintReady()) return;
       if (kind === 'reroll' && !rerollReady()) return;
       if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'), continueClosed)) return;
-      if (kind === 'double_score' && !canOfferDouble({ doublesUsed, rewardedAllowed: ads.canOfferRewarded('double_score') })) return;
+      if (kind === 'double_score' && !doubleReady()) return;
       if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
@@ -963,7 +1054,11 @@ function start() {
       levelName: level().name,
       clears: state.roundClears,
       clearsGoal: state.targetClears,
-      continueRows: tuning.continueClears
+      continueRows: tuning.continueClears,
+      roundNumber: roundNumber(),
+      checkpoint: Boolean(checkpoint),
+      yesterdayBest: progress.yesterdayBest || 0,
+      dailyStatus: daily.lastCompleted === streakDay(new Date(), retention.dayStreak.rolloverHourLocal) ? 'done' : 'unplayed'
     });
     const key = JSON.stringify(view);
     if (!force && key === overlayKey) return;
@@ -996,17 +1091,14 @@ function start() {
     canvas.width = Math.round(layout.canvasWidth * dpr);
     canvas.height = Math.round(layout.canvasHeight * dpr);
     canvas.style.width = `${layout.canvasWidth}px`;
-    canvas.style.height = `${layout.canvasHeight}px`;
+    canvas.style.maxWidth = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.aspectRatio = `${layout.canvasWidth} / ${layout.canvasHeight}`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function pointFrom(event) {
-    const rect = canvas.getBoundingClientRect();
-    return pointerScale(
-      { x: event.clientX - rect.left, y: event.clientY - rect.top },
-      rect,
-      layout
-    );
+    return pointerToBoard(event.clientX, event.clientY, canvas.getBoundingClientRect(), layout);
   }
 
   function liftPx() {
@@ -1022,7 +1114,8 @@ function start() {
     let snapY = 0;
     let ghostValid = false;
     if (piece && overBoard) {
-      const snap = snapOrigin(point.x, point.y, layout.cell, piece.shape);
+      const anchor = dragPieceOrigin(point, liftPx());
+    const snap = snapOrigin(anchor.x, anchor.y, layout.cell, piece.shape);
       snapX = snap.x;
       snapY = snap.y;
       ghostValid = canPlace(match.state.board, piece.shape, snapX, snapY);
@@ -1103,7 +1196,11 @@ function start() {
     }
     persist();
     if (result.roundComplete) finishRound();
-    else if (result.gameOver) finishGame();
+    else if (result.gameOver) {
+      pointer = createPointerState();
+      if (settleGameOver({ gameOver: true, lines: result.lines, animating: result.lines > 0 })) finishGame();
+      else pendingGameOver = { lines: result.lines };
+    }
     return result;
   }
 
@@ -1173,7 +1270,7 @@ function start() {
     const now = performance.now();
     const elapsed = Math.max(0, Math.min(1000, now - lastTick));
     lastTick = now;
-    if (screen() === 'play') playMs += elapsed;
+    if (screen() === 'play' && !simClock) playMs += elapsed;
     if (!sawStuck && screen() === 'play' && isStuck(match.state.board, match.state.pieces)) sawStuck = true;
     const state = match.state;
     if (roundNoticeUntil && now >= roundNoticeUntil) {
@@ -1186,6 +1283,10 @@ function start() {
     if (cue?.sound && !reducedMotion && cue.level !== lastDangerLevel) audio.play(cue.sound);
     lastDangerLevel = cue?.level || 0;
     const fx = feedback.sample(now);
+    if (pendingGameOver && fx.settled && settleGameOver({ gameOver: true, lines: pendingGameOver.lines, animating: false })) {
+      pendingGameOver = null;
+      finishGame();
+    }
     let ghost = null;
     let drag = null;
     const active = pointer.drag ? state.pieces[pointer.drag.index] : null;
@@ -1195,7 +1296,8 @@ function start() {
         && pointer.drag.x < layout.boardSize
         && pointer.drag.y < layout.boardSize;
       if (overBoard) {
-        const snap = snapOrigin(pointer.drag.x, pointer.drag.y, layout.cell, active.shape);
+        const anchor = dragPieceOrigin(pointer.drag, liftPx());
+        const snap = snapOrigin(anchor.x, anchor.y, layout.cell, active.shape);
         ghost = {
           ...snap,
           shape: active.shape,
@@ -1248,6 +1350,7 @@ function start() {
       reroll: rerollReady() ? 'ready' : 'off',
       dailyLabel: mode === 'daily' ? `Daily ${daily.streak || 0}` : 'Daily',
       dailyOn: mode === 'daily',
+      dailyBadge: daily.lastCompleted !== streakDay(new Date(), retention.dayStreak.rolloverHourLocal),
       reducedMotion,
       haptics: hapticsOn,
       install: install.available,
@@ -1267,24 +1370,7 @@ function start() {
   let lastHeaderH = 0;
 
   function paintBanner() {
-    const state = match.state;
-    const prompt = agePrompt(consent);
-    if (prompt) ui.setBanner(prompt);
-    else if (welcomeOpen) {
-      ui.setBanner({
-        body: welcomeCopy({
-          levelName: level().name,
-          clears: state.roundClears,
-          clearsGoal: state.targetClears,
-          bestScore: Math.max(progress.bestScore || 0, state.score),
-          streak: daily.streak || 0
-        }),
-        actions: [
-          { id: 'new_game', label: 'New game', primary: false },
-          { id: 'resume', label: 'Continue level', primary: true }
-        ]
-      });
-    } else ui.setBanner(null);
+    ui.setBanner(agePrompt(consent));
   }
 
   attachSimBridge({
@@ -1300,6 +1386,14 @@ function start() {
     getRewardKind: () => overlay?.kind || rewardKind || null,
     getBreak: () => overlay?.after || null,
     getRound: () => level().name,
+    getRoundNumber: () => roundNumber(),
+    getPlayMs: () => playMs,
+    advancePlay: (ms) => {
+      const delta = Math.max(0, Number(ms) || 0);
+      if (screen() !== 'play' || delta === 0) return 0;
+      playMs += delta;
+      return delta;
+    },
     canHint: () => hintReady(),
     performUi: (id) => onAction(id),
     performMove: (index, x, y) => commitPlace(index, x, y)

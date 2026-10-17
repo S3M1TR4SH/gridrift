@@ -29,7 +29,7 @@ No.
 
 ## Data stored only on the device
 
-The age gate writes `studio-core.consent.v1` in `localStorage`. The record is an age band (`under13` or `13plus`), not a birth date. It also stores whether analytics and ads are allowed. Under-13 answers force analytics off and ads off, and loading the record again cannot turn those flags back on.
+The age gate writes `studio-core.consent.v1` in `localStorage`. The record stores the birth year on the device, plus whether analytics and ads are allowed. Players under 13 get non-personalized test ads only: H5 requests set non-personalized and child-directed, and AdMob requests set tagForChildDirectedTreatment, maxAdContentRating G, and npa. The build still uses Google's demo ad unit ids. Under 13 does not initialize Mixpanel, does not read a device id or an advertising id, and does not enable notifications. Loading the record again cannot turn analytics, notifications, or personalized ads back on.
 
 That record is not copied off the device by this build. It does not need to be declared as collected data. It is listed here so the form is not filled from guesswork.
 
@@ -44,7 +44,7 @@ That record is not copied off the device by this build. It does not need to be d
 
 - The page can show a local advertisement placeholder. It does not request an ad network.
 - `studio-core/ads/admob` names only Google's published Android demo ad units and returns `bridge_unavailable` unless a native shell installed `__studioAdsBridge`. The TWA does not install that bridge and does not depend on `play-services-ads`.
-- Players under 13 get no ads and no analytics.
+- Players under 13 can be shown non-personalized ads only. They get no analytics. The adapters do not transmit a device id or an advertising id, and notifications stay off.
 
 ## Before submission
 

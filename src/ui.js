@@ -106,6 +106,7 @@ export function createUi(doc = document) {
       if (daily) {
         daily.textContent = hud.dailyLabel || 'Daily';
         daily.setAttribute('aria-pressed', hud.dailyOn ? 'true' : 'false');
+        daily.classList.toggle('badged', Boolean(hud.dailyBadge));
       }
       if (motion) {
         motion.textContent = hud.reducedMotion ? 'Reduced motion' : 'Motion';

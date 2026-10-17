@@ -264,7 +264,7 @@ function validateDifficulty(difficulty, violations) {
   }
 }
 
-function validatePrivacy(privacy, violations) {
+function validatePrivacy(privacy, ads, violations) {
   if (!isPlainObject(privacy)) {
     violations.push(violation('privacy.required', 'privacy config is required', privacy));
     return;
@@ -281,8 +281,8 @@ function validatePrivacy(privacy, violations) {
     }
   }
   if (expectBoolean(violations, privacy.childrenAdsAllowed, 'privacy.childrenAds', 'childrenAdsAllowed is required')) {
-    if (privacy.childrenAdsAllowed) {
-      violations.push(violation('privacy.childrenAds', 'children cannot be shown ads', true));
+    if (privacy.childrenAdsAllowed && (privacy.personalizedAds === true || ads?.personalized === true)) {
+      violations.push(violation('privacy.childrenAds', 'children can only be shown non-personalized ads', true));
     }
   }
   if (expectBoolean(violations, privacy.childrenAnalyticsAllowed, 'privacy.childrenAnalytics', 'childrenAnalyticsAllowed is required')) {
@@ -331,7 +331,7 @@ export function validateTuning(tuning) {
     return { ok: false, violations: [violation('tuning.required', 'tuning config is required', tuning)] };
   }
   violations.push(...findUnsafeLiterals(tuning, '$.tuning'));
-  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score', 'juice']);
+  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score', 'juice', 'rewardedMinMoves']);
   for (const key of Object.keys(tuning)) {
     if (!allowed.has(key)) violations.push(violation('tuning.unexpected', `unexpected tuning field ${key}`, key));
   }
@@ -340,6 +340,9 @@ export function validateTuning(tuning) {
   }
   if (typeof tuning.traySize !== 'number' || tuning.traySize < 1 || tuning.traySize > 3) {
     violations.push(violation('tuning.traySize', 'traySize must be from 1 to 3', tuning.traySize));
+  }
+  if (tuning.rewardedMinMoves != null && (typeof tuning.rewardedMinMoves !== 'number' || tuning.rewardedMinMoves < 0)) {
+    violations.push(violation('tuning.rewardedMinMoves', 'rewardedMinMoves must be a non-negative number', tuning.rewardedMinMoves));
   }
   if (typeof tuning.continueClears !== 'number') {
     violations.push(violation('tuning.continueClears', 'continueClears is required', tuning.continueClears));
@@ -466,7 +469,7 @@ export function validatePacing(pacing) {
   }
   validateAds(pacing.ads, violations);
   validateDifficulty(pacing.difficulty, violations);
-  validatePrivacy(pacing.privacy, violations);
+  validatePrivacy(pacing.privacy, pacing.ads, violations);
   return { ok: violations.length === 0, violations };
 }
 

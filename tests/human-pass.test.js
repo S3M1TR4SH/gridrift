@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createFeedback } from '../studio-core/index.js';
 import tuning from '../config/tuning.json' with { type: 'json' };
-import { dangerCue, dropFeedback, roundClearedNotice, trayPieceAlpha } from '../src/danger.js';
+import { dangerCue, dropFeedback, roundClearedNotice, scorePopupStyle, trayPieceStyle } from '../src/danger.js';
 import { createPointerState, pointerReducer } from '../src/input.js';
 import { createBoard, createMatch, fitsAnywhere } from '../src/logic.js';
 
@@ -18,14 +18,20 @@ const score = {
   maxStreakMultiplier: 1
 };
 
-test('unplaceable tray pieces grey out and low space uses the danger cue', () => {
-  assert.equal(trayPieceAlpha(true), 1);
-  assert.equal(trayPieceAlpha(false), 0.32);
+test('unplaceable tray pieces are hatched and low space uses the danger cue', () => {
+  assert.deepEqual(trayPieceStyle(true), { alpha: 1, desaturate: false, hatch: false });
+  const blocked = trayPieceStyle(false);
+  assert.equal(blocked.desaturate, true);
+  assert.equal(blocked.hatch, true);
+  assert.ok(blocked.alpha > 0.4 && blocked.alpha < 1);
   const open = createBoard(4);
-  assert.equal(trayPieceAlpha(fitsAnywhere(open, [[1]])), 1);
+  assert.equal(trayPieceStyle(fitsAnywhere(open, [[1]])).hatch, false);
   const full = createBoard(4);
   for (const row of full) row.fill('#fff');
-  assert.equal(trayPieceAlpha(fitsAnywhere(full, [[1]])), 0.32);
+  assert.equal(trayPieceStyle(fitsAnywhere(full, [[1]])).hatch, true);
+  const popup = scorePopupStyle(0);
+  assert.ok(popup.fontPx >= 24);
+  assert.equal(popup.fill, '#ffffff');
   assert.equal(dangerCue(9), null);
   assert.equal(dangerCue(0), null);
   const low = dangerCue(6);
@@ -37,7 +43,7 @@ test('unplaceable tray pieces grey out and low space uses the danger cue', () =>
   assert.equal(critical.level, 2);
   assert.equal(critical.sound, 'sfx.danger');
   const render = readFileSync(join(root, 'src/render.js'), 'utf8');
-  assert.match(render, /trayPieceAlpha\(fitsAnywhere\(board, piece\.shape\)\)/);
+  assert.match(render, /trayPieceStyle\(fitsAnywhere\(board, piece\.shape\)\)/);
   const hud = readFileSync(join(root, 'src/main.js'), 'utf8');
   assert.match(hud, /lowSpace: dangerCue\(/);
 });

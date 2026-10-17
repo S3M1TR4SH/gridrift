@@ -33,7 +33,7 @@
     ]
   },
   "privacy": {
-    "childrenAdsAllowed": false,
+    "childrenAdsAllowed": true,
     "childrenAnalyticsAllowed": false,
     "personalizedAds": false,
     "network": false

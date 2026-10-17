@@ -74,6 +74,41 @@ test('H5 Games Ads stays unloaded until a synchronous bridge exists', () => {
   assert.equal(blocked.showRewarded({ placement: 'continue', optedIn: true }).reason, 'async_blocked');
 });
 
+test('under-13 H5 requests are non-personalized and child-directed', () => {
+  const calls = [];
+  const host = {
+    __studioH5Ads: {
+      synchronous: true,
+      adBreak(request) {
+        calls.push(request);
+        return { shown: true, rewarded: request.type === 'reward', reason: 'bridge' };
+      }
+    }
+  };
+  const childPacing = {
+    ...pacing,
+    ads: { ...pacing.ads, personalized: false },
+    privacy: { childrenAdsAllowed: true, personalizedAds: false }
+  };
+  const ads = createGuardedAds({
+    adapter: createH5GamesAdsAdapter({ host, childDirected: () => true }),
+    pacer: createPacer({ pacing: childPacing, now: () => 0, isChild: () => true })
+  });
+  assert.equal(ads.showInterstitial({ breakType: 'between_rounds' }).shown, true);
+  assert.deepEqual(calls[0], {
+    type: 'browse',
+    name: 'between_rounds',
+    nonPersonalized: true,
+    childDirected: true
+  });
+  const adult = createGuardedAds({
+    adapter: createH5GamesAdsAdapter({ host, childDirected: () => false }),
+    pacer: createPacer({ pacing: childPacing, now: () => 0, isChild: () => false })
+  });
+  assert.equal(adult.showRewarded({ placement: 'hint', optedIn: true }).shown, true);
+  assert.deepEqual(calls[1], { type: 'reward', name: 'hint' });
+});
+
 test('Capacitor AdMob uses demo units only on a synchronous plugin', () => {
   const missing = createAdMobAdapter({ bridge: createCapacitorAdMobBridge({}) });
   assert.equal(missing.showInterstitial().reason, 'bridge_unavailable');

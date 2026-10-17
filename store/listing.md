@@ -14,7 +14,7 @@ Place pieces, clear lines, and keep a streak on a 10x10 grid.
 
 Gridrift is a small puzzle you play on a 10 by 10 grid. Drag a piece into a gap, clear a full row or column, and keep a streak going. Each round asks for more clears, then the same board continues.
 
-You do not need an account. The game asks an age question and keeps the answer on the device. Players under 13 get the puzzle without ads and without stats. Everyone else can leave stats off. In this build those stats stay in the browser. They are not sent anywhere.
+You do not need an account. The game asks an age question and keeps the answer on the device. Players under 13 get non-personalized ads only, and no stats. Everyone else can leave stats off. In this build those stats stay in the browser. They are not sent anywhere.
 
 Restart is always available. A continue or a hint, when offered, is optional. Declining it returns you to the game.
 

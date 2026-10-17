@@ -9,17 +9,20 @@ if (CONTROL_GAP_PX < LIMITS.ads.minControlSeparationPx) {
 export const BOARD_MAX_PX = 560;
 
 export function computeLayout({ width, height, grid = 10, playHeight } = {}) {
-  const gap = 8;
+  const gap = 16;
   const trayFloor = 96;
   const trayCap = 180;
   const availW = Math.min(BOARD_MAX_PX, Math.max(grid * 14, width));
   let cell = Math.max(14, Math.floor(availW / grid));
-  let boardSize = cell * grid;
-  let trayHeight = Math.min(trayCap, Math.max(trayFloor, cell * 2));
-  if (playHeight != null) {
-    const room = Math.floor(playHeight) - boardSize - gap;
-    if (room >= trayFloor) trayHeight = Math.min(trayCap, room);
+  const limit = playHeight == null ? Infinity : Math.floor(playHeight);
+  while (cell > 14) {
+    const board = cell * grid;
+    const tray = Math.min(trayCap, Math.max(trayFloor, cell * 2 + gap));
+    if (board + gap + tray <= limit) break;
+    cell -= 1;
   }
+  const boardSize = cell * grid;
+  const trayHeight = Math.min(trayCap, Math.max(trayFloor, cell * 2 + gap));
   const trayTop = boardSize + gap;
   return {
     cell,
@@ -31,7 +34,8 @@ export function computeLayout({ width, height, grid = 10, playHeight } = {}) {
     canvasWidth: boardSize,
     canvasHeight: trayTop + trayHeight,
     anchor: 'upper',
-    maxBoard: BOARD_MAX_PX
+    maxBoard: BOARD_MAX_PX,
+    cellAspect: 1
   };
 }
 
@@ -60,10 +64,28 @@ export function hitTray(x, y, layout) {
 }
 
 export function pointerScale(local, rect, layout) {
-  const width = rect?.width || layout.canvasWidth;
-  const height = rect?.height || layout.canvasHeight;
+  return pointerToBoard(
+    (rect?.left || 0) + local.x,
+    (rect?.top || 0) + local.y,
+    rect,
+    layout
+  );
+}
+
+export function pointerToBoard(clientX, clientY, rect, layout) {
+  const left = rect?.left || 0;
+  const top = rect?.top || 0;
+  const width = rect?.width > 0 ? rect.width : layout.canvasWidth;
+  const height = rect?.height > 0 ? rect.height : layout.canvasHeight;
   return {
-    x: local.x * (layout.canvasWidth / width),
-    y: local.y * (layout.canvasHeight / height)
+    x: (clientX - left) * (layout.canvasWidth / width),
+    y: (clientY - top) * (layout.canvasHeight / height)
+  };
+}
+
+export function dragPieceOrigin(point, lift = 0) {
+  return {
+    x: point.x,
+    y: point.y - (Number(lift) || 0)
   };
 }

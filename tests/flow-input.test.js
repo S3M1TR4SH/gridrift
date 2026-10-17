@@ -12,11 +12,15 @@ import {
   planBreak,
   planRoundAdvance,
   rowsForContinue,
+  settleGameOver,
   shouldIgnoreInput,
   viewModel
 } from '../src/flow.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createPointerState, pointerReducer } from '../src/input.js';
-import { CONTROL_GAP_PX, computeLayout, hitTray, snapOrigin } from '../src/layout.js';
+import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerToBoard, snapOrigin } from '../src/layout.js';
 
 test('ad screens keep their actions off the previous button slot', () => {
   const round = viewModel({ screen: 'round_complete', roundName: 'Shallow drift', score: 12, bestStreak: 2 });
@@ -32,7 +36,7 @@ test('ad screens keep their actions off the previous button slot', () => {
   const watch = confirm.actions.find((action) => action.id === 'watch');
   assert.equal(decline.slot, offer.slot);
   assert.notEqual(watch.slot, offer.slot);
-  assert.equal(over.actions.some((action) => action.id === 'ask_restart'), true);
+  assert.equal(over.actions.some((action) => action.id === 'restart'), true);
   assert.equal(over.actions.some((action) => action.id === 'close_ad'), false);
   assert.ok(CONTROL_GAP_PX >= LIMITS.ads.minControlSeparationPx);
 });
@@ -66,6 +70,29 @@ test('breaks stay on round boundaries and continue is capped', () => {
 test('drag snaps to the grid and a tap selects', () => {
   assert.deepEqual(snapOrigin(15, 15, 30, [[1]]), { x: 0, y: 0 });
   assert.deepEqual(snapOrigin(45, 45, 30, [[1]]), { x: 1, y: 1 });
+  const cell = 64;
+  const pointer = { x: cell * 2 + 8, y: cell * 2 + 8 };
+  const landed = snapOrigin(dragPieceOrigin(pointer, 0).x, dragPieceOrigin(pointer, 0).y, cell);
+  assert.equal(landed.y, 2);
+  const centered = snapOrigin(pointer.x, pointer.y - (3 * cell) / 2, cell);
+  assert.notEqual(centered.y, landed.y);
+  const wide = computeLayout({ width: 1400, height: 900, grid: 8 });
+  const rect = { left: 12, top: 20, width: wide.canvasWidth / 2, height: wide.canvasHeight / 2 };
+  const clientX = rect.left + ((3 + 0.5) * wide.cell) / 2;
+  const clientY = rect.top + ((2 + 0.5) * wide.cell) / 2;
+  const boardPoint = pointerToBoard(clientX, clientY, rect, wide);
+  assert.equal(snapOrigin(boardPoint.x, boardPoint.y, wide.cell).x, 3);
+  assert.equal(snapOrigin(boardPoint.x, boardPoint.y, wide.cell).y, 2);
+  const unscaled = pointerToBoard(40, 80, { left: 0, top: 0, width: 200, height: 400 }, {
+    canvasWidth: 200,
+    canvasHeight: 400
+  });
+  assert.deepEqual(unscaled, { x: 40, y: 80 });
+  assert.equal(settleGameOver({ gameOver: true, lines: 1, animating: true }), false);
+  assert.equal(settleGameOver({ gameOver: true, lines: 1, animating: false }), true);
+  assert.equal(settleGameOver({ gameOver: true, lines: 0, animating: true }), true);
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/styles.css'), 'utf8');
+  assert.match(css, /#overlay\s*\{[^}]*position:\s*fixed/s);
   const layout = computeLayout({ width: 390, height: 844, grid: 10 });
   assert.equal(layout.boardSize, layout.cell * 10);
   assert.ok(layout.canvasWidth <= 390);
@@ -123,15 +150,26 @@ test('a second drag is accepted immediately', () => {
 
 test('game over offers an opt-in continue once and always offers restart', () => {
   const over = viewModel({ screen: 'game_over', rewarded: true, score: 40, bestStreak: 3 });
-  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'ask_restart']);
+  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'restart']);
   const reward = over.actions.find((action) => action.id === 'offer_continue');
   assert.match(reward.label, /Watch ad: clear 3 rows/);
   assert.equal(reward.primary, false);
-  assert.equal(over.actions.find((action) => action.id === 'ask_restart').primary, true);
+  assert.equal(over.actions.find((action) => action.id === 'restart').primary, true);
   assert.equal(over.separated, false);
-  assert.equal(over.actions.find((action) => action.id === 'ask_restart').label, 'Restart');
+  assert.match(over.body, /Back to Round 1, best kept/);
+  const checkpoint = viewModel({
+    screen: 'game_over',
+    rewarded: false,
+    score: 40,
+    bestScore: 80,
+    checkpoint: true,
+    roundNumber: 3
+  });
+  assert.match(checkpoint.body, /Restart from Round 3 checkpoint/);
+  assert.equal(checkpoint.actions.find((action) => action.id === 'retry_round').label, 'Retry round');
+  assert.equal(checkpoint.actions.find((action) => action.id === 'retry_round').primary, true);
   const spent = viewModel({ screen: 'game_over', rewarded: false, score: 40, bestStreak: 3 });
-  assert.deepEqual(spent.actions.map((action) => action.id), ['ask_restart']);
+  assert.deepEqual(spent.actions.map((action) => action.id), ['restart']);
   const restart = viewModel({ screen: 'restart_confirm', bestScore: 40 });
   assert.match(restart.body, /Back to Round 1/);
   assert.match(restart.body, /Best 40 kept/);
@@ -149,14 +187,17 @@ test('game over offers an opt-in continue once and always offers restart', () =>
   assert.equal(canOfferContinue(0, true, true), false);
 });
 
-test('reroll and double score are opt-in and once each', () => {
-  assert.equal(canOfferReroll({ stuck: false, rerollsUsed: 0, rewardedAllowed: true }), false);
-  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: true }), true);
-  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 1, rewardedAllowed: true }), false);
-  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: false }), false);
-  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: true }), true);
-  assert.equal(canOfferDouble({ doublesUsed: 1, rewardedAllowed: true }), false);
-  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: false }), false);
+test('reroll and double score share the hint move floor and are once each', () => {
+  const floor = { moves: HINT_MIN_MOVES, minMoves: HINT_MIN_MOVES };
+  assert.equal(canOfferReroll({ stuck: false, rerollsUsed: 0, rewardedAllowed: true, ...floor }), false);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: true, moves: 14, minMoves: 15 }), false);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: true, ...floor }), true);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 1, rewardedAllowed: true, ...floor }), false);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: false, ...floor }), false);
+  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: true, moves: 14, minMoves: 15 }), false);
+  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: true, ...floor }), true);
+  assert.equal(canOfferDouble({ doublesUsed: 1, rewardedAllowed: true, ...floor }), false);
+  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: false, ...floor }), false);
   const doubled = viewModel({
     screen: 'game_over',
     rewarded: true,
@@ -166,7 +207,7 @@ test('reroll and double score are opt-in and once each', () => {
   });
   assert.ok(doubled.actions.some((action) => action.id === 'offer_continue'));
   assert.ok(doubled.actions.some((action) => action.id === 'offer_double'));
-  assert.ok(doubled.actions.some((action) => action.id === 'ask_restart'));
+  assert.ok(doubled.actions.some((action) => action.id === 'restart' || action.id === 'retry_round'));
   const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'reroll' });
   assert.match(confirm.body, /new tray/i);
   assert.equal(confirm.actions.find((action) => action.id === 'decline').label, 'No thanks');
@@ -193,22 +234,31 @@ test('a rewarded hint waits two minutes or a stuck board, and never before step 
   assert.equal(canOfferHint({ ...open, stuck: true, rewardedAllowed: false }), false);
 });
 
-test('welcome back shows the best score and the day streak', () => {
+test('welcome back shows yesterday, the daily, and the streak', () => {
   const welcome = viewModel({
     screen: 'welcome_back',
-    bestScore: 15,
+    yesterdayBest: 15,
     streak: 4,
-    levelName: 'Round 1',
-    clears: 1,
-    clearsGoal: 4
+    roundNumber: 2,
+    dailyStatus: 'unplayed'
   });
   assert.equal(welcome.title, 'Welcome back');
-  assert.match(welcome.body, /Round 1: 1\/4 clears/);
-  assert.match(welcome.body, /Best 15/);
+  assert.match(welcome.body, /Yesterday's best 15/);
+  assert.match(welcome.body, /Daily unplayed/);
   assert.match(welcome.body, /Streak 4/);
-  assert.equal(welcome.actions.find((action) => action.id === 'resume').label, 'Continue level');
-  assert.equal(welcome.actions.find((action) => action.id === 'resume').slot, 'lower');
-  assert.equal(welcome.actions.find((action) => action.id === 'new_game').slot, 'upper');
+  assert.doesNotMatch(welcome.body, /lose|miss|hurry|gone/i);
+  assert.equal(welcome.actions.find((action) => action.id === 'daily').label, 'Play Daily');
+  assert.equal(welcome.actions.find((action) => action.id === 'daily').primary, true);
+  assert.equal(welcome.actions.find((action) => action.id === 'resume').label, 'Continue Round 2');
+  const done = viewModel({
+    screen: 'welcome_back',
+    yesterdayBest: 15,
+    streak: 4,
+    roundNumber: 3,
+    dailyStatus: 'done'
+  });
+  assert.match(done.body, /Daily done/);
+  assert.equal(done.actions.find((action) => action.id === 'resume').primary, true);
   assert.equal(welcome.separated, false);
   assert.equal(viewModel({ screen: 'ad_break' }).separated, true);
   assert.equal(viewModel({ screen: 'rewarded_confirm', kind: 'hint' }).separated, true);

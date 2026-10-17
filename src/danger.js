@@ -15,7 +15,21 @@ export function placementCount(board, pieces) {
 }
 
 export function trayPieceAlpha(fits) {
-  return fits ? 1 : 0.32;
+  return trayPieceStyle(fits).alpha;
+}
+
+export function trayPieceStyle(fits) {
+  if (fits) return { alpha: 1, desaturate: false, hatch: false };
+  return { alpha: 0.55, desaturate: true, hatch: true };
+}
+
+export function scorePopupStyle(level = 0) {
+  const step = Math.max(0, Math.floor(Number(level) || 0));
+  return {
+    fontPx: Math.max(24, 24 + step * 4),
+    fill: '#ffffff',
+    stroke: '#10141d'
+  };
 }
 
 export function dangerCue(count, thresholds = {}) {

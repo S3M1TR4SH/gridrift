@@ -12,6 +12,7 @@ import {
   beginRun,
   emptyMercy,
   noteLoss,
+  noteSuccess,
   shouldShowWelcome,
   STREAK_RESET_COPY
 } from '../src/retention.js';
@@ -227,6 +228,8 @@ test('score bands and mercy ignore ads and never force a loss', () => {
   mercy = noteLoss(mercy);
   mercy = noteLoss(mercy);
   assert.equal(beginRun(mercy).easy, false);
+  mercy = noteSuccess(mercy);
+  assert.equal(mercy.lossesInRow, 2);
   mercy = noteLoss(mercy);
   assert.equal(mercy.queued, 1);
   for (let extra = 0; extra < 4; extra += 1) mercy = noteLoss(mercy);

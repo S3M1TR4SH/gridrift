@@ -29,9 +29,11 @@ export function evaluateAgeGate(answer) {
     return {
       isChild: true,
       analyticsAllowed: false,
-      adsAllowed: false,
+      adsAllowed: true,
       notificationsAllowed: false,
       personalizedAds: false,
+      nonPersonalizedAds: true,
+      childDirected: true,
       needsAnalyticsPrompt: false,
       coppaAge: COPPA_AGE
     };
@@ -42,6 +44,8 @@ export function evaluateAgeGate(answer) {
     adsAllowed: true,
     notificationsAllowed: true,
     personalizedAds: false,
+    nonPersonalizedAds: false,
+    childDirected: false,
     needsAnalyticsPrompt: true,
     coppaAge: COPPA_AGE
   };
@@ -53,9 +57,11 @@ export function applyAnalyticsChoice(state, choice) {
     return {
       ...state,
       analyticsAllowed: false,
-      adsAllowed: false,
+      adsAllowed: true,
       notificationsAllowed: false,
       personalizedAds: false,
+      nonPersonalizedAds: true,
+      childDirected: true,
       needsAnalyticsPrompt: false
     };
   }
@@ -68,6 +74,8 @@ export function applyAnalyticsChoice(state, choice) {
     adsAllowed: true,
     notificationsAllowed: state.notificationsAllowed !== false,
     personalizedAds: false,
+    nonPersonalizedAds: false,
+    childDirected: false,
     needsAnalyticsPrompt: false
   };
 }
@@ -81,9 +89,11 @@ function lock(state) {
     isChild,
     birthYear,
     analyticsAllowed: isChild ? false : Boolean(state.analyticsAllowed),
-    adsAllowed: isChild ? false : state.adsAllowed !== false,
+    adsAllowed: isChild ? true : state.adsAllowed !== false,
     notificationsAllowed: isChild ? false : state.notificationsAllowed !== false,
     personalizedAds: false,
+    nonPersonalizedAds: isChild,
+    childDirected: isChild,
     needsAnalyticsPrompt: isChild ? false : Boolean(state.needsAnalyticsPrompt),
     coppaAge: COPPA_AGE
   };

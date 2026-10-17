@@ -1,6 +1,7 @@
 {
   "grid": 6,
   "traySize": 3,
+  "rewardedMinMoves": 15,
   "continueClears": 3,
   "levelOrder": ["round-01", "round-02", "round-03", "endless"],
   "score": {

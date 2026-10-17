@@ -17,6 +17,11 @@ export function continueRewardLabel(rows = 3) {
   return `Watch ad: clear ${rowsForContinue(rows)} rows`;
 }
 
+export function rewardedMoveFloor(minMoves = HINT_MIN_MOVES) {
+  const floor = Number(minMoves);
+  return Number.isFinite(floor) ? floor : HINT_MIN_MOVES;
+}
+
 export function canOfferHint({
   elapsedMs = 0,
   stuck = false,
@@ -26,8 +31,7 @@ export function canOfferHint({
   minMoves = HINT_MIN_MOVES
 } = {}) {
   if (!rewardedAllowed || hintsUsed >= 1) return false;
-  const floor = Number.isFinite(Number(minMoves)) ? Number(minMoves) : HINT_MIN_MOVES;
-  if ((Number(moves) || 0) < floor) return false;
+  if ((Number(moves) || 0) < rewardedMoveFloor(minMoves)) return false;
   if (stuck) return true;
   return elapsedMs >= HINT_MIN_PLAY_MS;
 }
@@ -45,23 +49,46 @@ export function agePrompt() {
 }
 
 export function restartConfirmCopy({ bestScore = 0 } = {}) {
-  return `Back to Round 1. Best ${bestScore} kept. This run's score, board, and round reset.`;
+  return `Back to Round 1, best kept. Best ${bestScore} kept.`;
+}
+
+export function gameOverCopy({ checkpoint = false, round = 1 } = {}) {
+  const n = Math.max(1, Math.floor(Number(round) || 1));
+  if (checkpoint) return `Restart from Round ${n} checkpoint`;
+  return 'Back to Round 1, best kept';
 }
 
 export function welcomeCopy(model = {}) {
-  const levelName = model.levelName || 'Level';
-  const clears = model.clears ?? 0;
-  const goal = model.clearsGoal ?? 4;
-  const best = model.bestScore ?? 0;
+  const yesterdayBest = model.yesterdayBest ?? model.bestScore ?? 0;
+  const daily = model.dailyStatus === 'done' ? 'Daily done' : 'Daily unplayed';
   const streak = model.streak ?? 0;
-  return `${levelName}: ${clears}/${goal} clears. Best ${best}. Streak ${streak}.`;
+  return `Yesterday's best ${yesterdayBest}. ${daily}. Streak ${streak}.`;
 }
 
-export function canOfferReroll({ stuck = false, rerollsUsed = 0, rewardedAllowed = false } = {}) {
+export function settleGameOver({ gameOver = false, lines = 0, animating = false } = {}) {
+  if (!gameOver) return false;
+  if ((Number(lines) || 0) > 0 && animating) return false;
+  return true;
+}
+
+export function canOfferReroll({
+  stuck = false,
+  rerollsUsed = 0,
+  rewardedAllowed = false,
+  moves = 0,
+  minMoves = HINT_MIN_MOVES
+} = {}) {
+  if ((Number(moves) || 0) < rewardedMoveFloor(minMoves)) return false;
   return Boolean(rewardedAllowed) && Boolean(stuck) && rerollsUsed < 1;
 }
 
-export function canOfferDouble({ doublesUsed = 0, rewardedAllowed = false } = {}) {
+export function canOfferDouble({
+  doublesUsed = 0,
+  rewardedAllowed = false,
+  moves = 0,
+  minMoves = HINT_MIN_MOVES
+} = {}) {
+  if ((Number(moves) || 0) < rewardedMoveFloor(minMoves)) return false;
   return Boolean(rewardedAllowed) && doublesUsed < 1;
 }
 
@@ -110,7 +137,7 @@ export function viewModel(model) {
     return card({
       screen: 'kid_mode',
       title: 'Kid mode',
-      body: 'No ads and no analytics. Have fun with the puzzle.',
+      body: 'The puzzle is ready.',
       actions: [{ id: 'start_play', label: 'Play', slot: 'lower', primary: true }]
     });
   }
@@ -127,14 +154,20 @@ export function viewModel(model) {
     });
   }
   if (model.screen === 'welcome_back') {
+    const round = Math.max(1, Math.floor(Number(model.roundNumber) || 1));
+    const unplayed = model.dailyStatus !== 'done';
+    const playDaily = { id: 'daily', label: 'Play Daily', slot: unplayed ? 'lower' : 'upper', primary: unplayed };
+    const continueRound = {
+      id: 'resume',
+      label: `Continue Round ${round}`,
+      slot: unplayed ? 'upper' : 'lower',
+      primary: !unplayed
+    };
     return card({
       screen: 'welcome_back',
       title: 'Welcome back',
       body: welcomeCopy(model),
-      actions: [
-        { id: 'new_game', label: 'New game', slot: 'upper', primary: false },
-        { id: 'resume', label: 'Continue level', slot: 'lower', primary: true }
-      ]
+      actions: unplayed ? [continueRound, playDaily] : [playDaily, continueRound]
     });
   }
   if (model.screen === 'ad_break') {
@@ -172,11 +205,18 @@ export function viewModel(model) {
     if (model.doubleScore) {
       actions.push({ id: 'offer_double', label: 'Double score', slot: 'lower', primary: false });
     }
-    actions.push({ id: 'ask_restart', label: 'Restart', slot: 'lower', primary: true });
+    const best = model.bestScore ?? 0;
+    const delta = Math.max(0, best - score);
+    if (model.checkpoint) {
+      actions.push({ id: 'retry_round', label: 'Retry round', slot: 'lower', primary: true });
+    } else {
+      actions.push({ id: 'restart', label: 'Back to Round 1', slot: 'lower', primary: true });
+    }
+    const outcome = gameOverCopy({ checkpoint: Boolean(model.checkpoint), round: model.roundNumber });
     return card({
       screen: 'game_over',
       title: 'No moves left',
-      body: `Score ${score}. Best ${model.bestScore ?? 0}.`,
+      body: `${outcome}. Best ${best}. Delta ${delta}.`,
       separated: false,
       actions
     });

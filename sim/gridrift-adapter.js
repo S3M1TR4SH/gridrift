@@ -43,6 +43,16 @@ export async function createAdapter({ root = process.cwd() } = {}) {
           tutorialSeen: Number(count) > 1,
           bestScore: 0
         }));
+        globalThis.__studioH5Ads = {
+          synchronous: true,
+          adBreak(request) {
+            return {
+              shown: true,
+              rewarded: request?.type === 'reward',
+              reason: 'h5_test'
+            };
+          }
+        };
       }, sessionNumber);
       await page.goto(`${server.url}/?sim=1`, { waitUntil: 'domcontentloaded' });
       try {
@@ -66,8 +76,12 @@ export async function createAdapter({ root = process.cwd() } = {}) {
       return page.evaluate(() => globalThis.__playerSim.isGameOver() === true);
     },
     async advanceTime(ms) {
-      clockMs += ms;
+      const delta = Math.max(0, Number(ms) || 0);
+      clockMs += delta;
       await page.clock.setSystemTime(clockMs);
+      if (delta > 0) {
+        await page.evaluate((played) => globalThis.__playerSim?.advancePlay?.(played), delta);
+      }
     },
     async stop() {
       const current = context;

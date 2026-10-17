@@ -71,9 +71,16 @@ test('slot 0 fits whenever a tier shape fits, and mercy eases without ads', () =
     assert.equal(out.gameOver, false);
   }
   const late = { moves: 80, elapsedMs: 200000, score: 900, totalClears: 24, assistDealsLeft: 0 };
-  const eased = easedRun(late, { mercy: true });
-  assert.equal(intensity(eased, difficulty), 0);
-  assert.ok(intensity(readRunState(late), difficulty) > intensity(eased, difficulty));
+  const eased = easedRun(late, { mercy: true, cfg: difficulty });
+  assert.ok(intensity(eased, difficulty) > 0);
+  assert.equal(eased.mercyTierCap, 1);
+  assert.ok(eased.elapsedMs <= late.elapsedMs - 29000);
+  let capped = true;
+  for (let seed = 1; seed <= 24; seed += 1) {
+    const names = generateTray({ board, run: eased, cfg: difficulty, rng: mulberry32(seed) }).names;
+    if (names.includes('line5')) capped = false;
+  }
+  assert.equal(capped, true);
   let differed = false;
   for (let seed = 1; seed <= 12; seed += 1) {
     const hard = generateTray({ board, run: late, cfg: difficulty, rng: mulberry32(seed) }).names.join();
@@ -81,6 +88,17 @@ test('slot 0 fits whenever a tier shape fits, and mercy eases without ads', () =
     if (hard !== easy) differed = true;
   }
   assert.equal(differed, true);
+  const fastMoves = Math.floor(60 / 2.2);
+  assert.equal(intensity({
+    moves: fastMoves,
+    elapsedMs: Math.round(fastMoves * 2200),
+    score: 0,
+    totalClears: 0,
+    assistDealsLeft: 0
+  }, difficulty), 0);
+  assert.equal(difficulty.timeModel.secondsPerMove, 2.5);
+  assert.equal(intensity({ moves: 24, elapsedMs: 0, score: 0, totalClears: 0, assistDealsLeft: 0 }, difficulty), 0);
+  assert.ok(intensity({ moves: 25, elapsedMs: 0, score: 0, totalClears: 0, assistDealsLeft: 0 }, difficulty) > 0);
   assert.equal(gridForRound(1, difficulty), 6);
   assert.equal(gridForRound(2, difficulty), 8);
   assert.deepEqual([1, 2, 3, 4].map((round) => goalForRound(round, difficulty)), [4, 6, 10, 14]);

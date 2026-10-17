@@ -9,16 +9,35 @@ export function readRunState(run) {
   return Object.fromEntries(ALLOWED_RUN_STATE_KEYS.map((key) => [key, Number(source[key]) || 0]));
 }
 
-export function easedRun(run, { mercy = false } = {}) {
+export const MERCY_SHIFT_S = 30;
+
+export function easedRun(run, { mercy = false, cfg = null } = {}) {
   const state = readRunState(run);
   if (!mercy) return state;
-  return { ...state, moves: 0, elapsedMs: 0, score: 0, totalClears: 0 };
+  const startRaw = Number(cfg?.ramp?.startS);
+  const startS = Number.isFinite(startRaw) ? startRaw : 60;
+  const perMove = fallbackSecondsPerMove(cfg);
+  const liveClock = state.elapsedMs > 0;
+  const seconds = liveClock ? state.elapsedMs / 1000 : state.moves * perMove;
+  let shifted = Math.max(0, seconds - MERCY_SHIFT_S);
+  if (seconds > startS) shifted = Math.max(shifted, startS + 0.001);
+  return {
+    ...state,
+    elapsedMs: liveClock ? shifted * 1000 : state.elapsedMs,
+    moves: liveClock ? state.moves : shifted / perMove,
+    mercyTierCap: 1
+  };
+}
+
+function fallbackSecondsPerMove(cfg) {
+  const perMove = Number(cfg?.timeModel?.secondsPerMove);
+  return Number.isFinite(perMove) && perMove > 0 ? perMove : 2.5;
 }
 
 export function runSeconds(run, cfg) {
   const state = readRunState(run);
-  const perMove = cfg.timeModel?.secondsPerMove ?? 2.5;
-  return Math.max(state.elapsedMs / 1000, state.moves * perMove);
+  if (state.elapsedMs > 0) return state.elapsedMs / 1000;
+  return state.moves * fallbackSecondsPerMove(cfg);
 }
 
 export function intensity(run, cfg) {
@@ -72,13 +91,15 @@ function blend(left, right, fraction) {
 
 export function generateTray({ board, run, cfg, rng, count = 3 }) {
   const state = readRunState(run);
+  const tierCap = Math.max(0, Math.floor(Number(run?.mercyTierCap) || 0));
   const assist = state.assistDealsLeft > 0;
   const level = intensity(state, cfg);
   const tiers = cfg.tiers;
+  const maxIndex = Math.max(0, tiers.length - 1 - tierCap);
   let index = 0;
-  while (index < tiers.length - 1 && level >= tiers[index + 1].at) index += 1;
+  while (index < maxIndex && level >= tiers[index + 1].at) index += 1;
   const low = tiers[index];
-  const high = tiers[Math.min(index + 1, tiers.length - 1)];
+  const high = index >= maxIndex ? low : tiers[Math.min(index + 1, tiers.length - 1)];
   const fraction = high === low ? 0 : clamp01((level - low.at) / (high.at - low.at));
   const entries = assist
     ? cfg.assist.assistShapes.filter((name) => SHAPES[name]).map((name) => [name, 1])

@@ -10,7 +10,7 @@
     "noise": 10,
     "blunderRate": 0.12,
     "blunderTopK": 3,
-    "thinkMs": 3500
+    "thinkMs": 3000
   },
   "skilled": {
     "placement": "human",
@@ -23,7 +23,7 @@
     "noise": 3,
     "blunderRate": 0.03,
     "blunderTopK": 3,
-    "thinkMs": 2200
+    "thinkMs": 1900
   },
   "quitter": {
     "placement": "human",
@@ -36,7 +36,7 @@
     "noise": 15,
     "blunderRate": 0.2,
     "blunderTopK": 3,
-    "thinkMs": 3000
+    "thinkMs": 2600
   },
   "ad-averse": {
     "placement": "human",
@@ -49,6 +49,6 @@
     "noise": 8,
     "blunderRate": 0.08,
     "blunderTopK": 3,
-    "thinkMs": 3000
+    "thinkMs": 2600
   }
 }

@@ -222,6 +222,22 @@ canvas {
   height: auto;
   max-width: 100%;
   display: block;
+  aspect-ratio: auto;
+}
+
+#daily {
+  position: relative;
+}
+
+#daily.badged::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #ff5d73;
 }
 
 .round-notice {

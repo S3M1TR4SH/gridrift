@@ -367,3 +367,109 @@ Evidence:
 
 ### Ads
 None are shipped. When they're enabled, use the engagement-ad-design.md rules and the P0 continue config, and re-run the ad gate on a live build.
+
+---
+
+## Playtest 512c500 evidence (2026-10-17 CT)
+Sources:
+- `/workspace/playtest/2026-10-17-512c500/REPORT.md` and `gridrift-retest-2026-10-17-512c500.md`
+- Screenshots 01-15 (clips not watched)
+- `/workspace/difficulty/gridrift-retune-v1.1-evidence.md`
+
+**Gate:** FAIL, on human feel only (average 4.8, needs 6). All sim gates pass: calibrated median session 112.3s, D1 proxy 0.866. Ads are still off. PR #12 (studio-core extraction) changed no gameplay, so differences in this pass come from deal variance or a closer look, not code. Observations marked (XD) come from XD S1M's review of the screenshots.
+
+### Playtester top issues
+1. Difficulty swings with no ramp: careless play lost in about 8 moves in Rounds 1 and 2, while the last build couldn't be lost.
+2. Restart drops you to Round 1 without warning.
+3. No welcome-back or daily pull.
+
+### #4 Tension: reconciled with the Difficulty Researcher (supersedes the 65d60f9 #4 proposal)
+**Ownership:** difficulty tuning (generator, piece tiers, clear bias, placeability, mercy wiring) belongs to the **Difficulty Researcher**: `/workspace/difficulty/gridrift-difficulty-v1.1.json` plus its evidence doc. Round goals and board size (6x6 vs 8x8) are **Gridrift Studio** decisions. The Difficulty Researcher flagged 8x8 and longer round goals (e.g. 6/10/14) as v1.2 candidates.
+
+**Evidence:** (a, XD) a Round 1 loss at Lines 3/4 on 6x6, alongside easy rounds elsewhere, confirms the swing (06, 07, clip-03). The cause is main's score-band deal: an easy pool, then a cliff (difficulty evidence, "What changed"). v1.1 gives a run-state ramp with intensity 0 until 60s, rising to 1 at 120s. In the human model:
+- Losses before 60s went from 4% to 0%.
+- Losses in the 90-150s window went from 63% to 81%.
+- The p25-p75 window narrowed from 47s to 25s.
+- casualSim's median went from 25s to 80s.
+
+The human model was calibrated against one tester and is unconfirmed by real players.
+
+**Changes to the 65d60f9 #4 proposal:**
+- **Dropped:** `roundSetup.prefillRatioByRound` for rounds 2+. It conflicts with the no-prefill-after-round-1 rule.
+- **Superseded by difficulty v1.1:** the per-round loss-rate bands table, `pieceMix` tiers, `deal`, `fillPressure` and `mercy` values. Leave those to the Difficulty Researcher's config.
+- **Moved to Gridrift Studio as options, not engagement requirements:** `boardByRound` (8x8) and `linesGoalByRound`.
+
+**Engagement-side acceptance criteria (the only ones this spec keeps):**
+1. **Monotonic ramp, no swings.** Within a run, difficulty never drops except through declared mercy. Across seeds, there's no bimodal "unlosable vs. dead in 8 moves" split. Check in the sim: the share of human-model losses before 60s is about 0, and the time-to-loss distribution is unimodal.
+2. **Median session ≥ 60s** (release-gate target) on both the calibrated sim and human runs.
+3. **Loss rate identical with ads on or off**, with a gap of 0 within noise. v1.1 already whitelists run-state inputs, so ad availability and best score can't reach the generator. Keep `tests/difficulty-guardrail.test.js` as the gate.
+```json
+"engagementAcceptance.difficulty": { "owner": "difficultyResearcher", "configRef": "/workspace/difficulty/gridrift-difficulty-v1.1.json",
+  "criteria": { "monotonicRamp": true, "maxShareLossesBefore60s": 0.02, "unimodalTimeToLoss": true,
+    "medianSessionSecMin": 60, "adsOnVsOffLossRateDelta": 0 },
+  "studioOptions": { "boardByRound": "gridriftStudio", "linesGoalByRound": "gridriftStudio" },
+  "superseded": ["perRoundLossBands@65d60f9", "roundSetup.prefillRatioByRound@65d60f9"] }
+```
+Related bug for Studio: game over #2 fired while a column clear was still animating, leaving a stray ghost piece (11). Check for game over only after clear animations settle.
+```json
+"gameOver": { "checkAfterAnimationsSettle": true, "clearGhostOnEnd": true }
+```
+
+### Finish #1: Restart framing plus welcome-back/daily pull (re-ranked up)
+- (b, XD) Restart from Round 2 shows Round 1 with Best kept, and gives no warning (11, 12).
+  - **Spec:** the game-over text must state the outcome: either "Restart from Round N checkpoint" (checkpoint mode) or "Back to Round 1, best kept" (round1 mode).
+  - Add "Retry round" as the primary action when checkpoint mode is on.
+  - Studio picks the mode, ideally through an A/B test.
+  - Also: the starting board is inconsistent. The first board is pre-filled, a restart gives an empty board, and each new round carries the old board over. Define the restart board explicitly (the Difficulty Researcher owns prefill).
+- (f, XD; 10) A Daily button exists, but nothing pulls players to it. The return hook dropped from 5 to 4.
+  - **Spec:** on load after 30+ minutes away, show a welcome-back card with yesterday's best, today's Daily status (unplayed / done) and the day streak. Primary action: "Play Daily" when unplayed, otherwise "Continue Round N".
+  - Show a **Daily badge** on the Daily button while today's Daily is unplayed.
+  - Neutral copy, with no loss-aversion wording.
+```json
+"restart": { "mode": "checkpointRound", "modeOptions": ["round1","checkpointRound"],
+  "gameOverCopy": { "checkpointRound": "Restart from Round {n} checkpoint", "round1": "Back to Round 1, best kept" },
+  "primary": { "checkpointRound": "retryRound", "round1": "restart" }, "showBest": true, "showDeltaToBest": true,
+  "restartBoard": "defineExplicitly" },
+"welcomeBack": { "enabled": true, "minAwayMinutes": 30,
+  "card": { "show": ["yesterdayBest","dailyStatus","dayStreak"], "primaryCta": { "ifDailyUnplayed": "playDaily", "else": "continueRound" },
+    "lossAversionCopy": false } },
+"dailyBadge": { "enabled": true, "showWhen": "dailyUnplayedToday", "style": "dot", "clearOnOpen": false, "clearOnComplete": true }
+```
+
+### Still open
+- **NEW-P0 age screen: still OPEN.** (c, XD) The prompt is unchanged: three buttons that hint at what each unlocks (01). The tester also reports the buttons re-render (no normal click for about 5s), and closing the banner shifts the board about 75px mid-drag, which made the first drop miss. Keep the 65d60f9 `ageGate` config and add:
+  ```json
+  "ageGate": { "showBefore": "firstPlay", "fullScreen": true, "stableRender": true, "noLayoutShiftOnClose": true }
+  ```
+- **Layout: still OPEN.**
+  - (d, XD) Desktop cells are still stretched, about 320x125 at 1920px (01). Keep the 65d60f9 `layout.board.maxWidthPx` / `cellAspect: 1` delta.
+  - (e, XD) At mobile 390x844 there's about 210px of empty space between the board and the tray (13). Fix it with:
+  ```json
+  "layout.mobilePortrait": { "trayAnchor": "belowBoard", "trayGapPx": 16, "boardScale": "fitWidthThenHeight", "reclaimDeadSpaceTo": "topPanel" }
+  ```
+- **Input:** the quick second drag is FIXED. The drop target being about one row off the drawn piece on desktop is still OPEN (02, 05). Touch works. Keep `input.dropTargetFrom: "pointerWithOffset"` and draw the ghost exactly at the drop cells.
+- **Readability and juice (new, MED/LOW):** grey tray pieces look the same as the pre-filled junk cells. The "+39" popup is small and dim.
+  ```json
+  "visual": { "trayPiecePalette": "distinctFromPrefill", "prefillColor": "neutralDim" },
+  "feedback.scorePopup": { "minFontPx": 24, "contrast": "high" }, "feedback.comboPopup": { "onBoard": true }
+  ```
+- **Fixed this build:** quick second drag, streak popup clipping, and reachable game over.
+
+### Adopted in this build
+Difficulty v1.2 replaces the local ramp steepening. The ramp is still flat through 60s and full at 80s, with tier steps at 0.3, 0.55, and 0.8. `secondsPerMove` stays 2.5 and is only the fallback while elapsed play time is zero. The sim adds each persona's think time to the in-game play clock, so a 2.2s player keeps that full 60s opening. Mercy counts consecutive game overs; clearing a round does not reset the streak. One mercy run shifts the ramp 30s later and caps the deal one shape tier below the top. That ease never flattens difficulty to zero, and the run can still end. Round 3's loss share is reported from the sim and is not retuned past v1.2.
+
+### Re-rank (warranted)
+#4 changes owner and Finish #1 moves up because the return hook fell to 4.
+
+New order:
+1. NEW-P0 age screen (compliance)
+2. #4 Tension: adopt difficulty v1.1 against the engagement acceptance criteria above
+3. Finish #1: restart framing, welcome-back card, Daily badge
+4. Input: drop target offset, game-over-after-animations
+5. Layout: desktop square cells, mobile gap
+6. Readability/juice
+7. #5 Daily/streak (the welcome-back card and badge feed it)
+8. #6 Notifications
+9. #9 Session hooks
+10. #7 Progression
+11. #8 Cosmetics

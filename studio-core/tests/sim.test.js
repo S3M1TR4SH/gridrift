@@ -77,9 +77,9 @@ test('the default human policy uses the calibration file and keeps legacy select
   const casual = resolvePersona('casual');
   assert.equal(casual.placement, 'human');
   assert.equal(casual.lookahead, 1);
-  assert.equal(casual.thinkMs, 3500);
+  assert.equal(casual.thinkMs, 3000);
   assert.equal(resolvePersona('skilled').lookahead, 2);
-  assert.equal(resolvePersona('skilled').thinkMs, 2200);
+  assert.equal(resolvePersona('skilled').thinkMs, 1900);
   assert.equal(resolvePersona('quitter').blunderRate, 0.2);
   assert.equal(resolvePersona('ad-averse').lookProb, 0.8);
   const legacy = resolvePersona('casual', { placement: 'legacy' });

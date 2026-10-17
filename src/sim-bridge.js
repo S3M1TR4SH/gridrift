@@ -158,7 +158,9 @@ export function attachSimBridge(api) {
       nearMiss: boardNearMiss(match.board),
       ad: describeAd({ ...view, actions }, api.getRewardKind(), api.getBreak()),
       actions,
-      round: api.getRound()
+      round: api.getRound(),
+      roundNumber: Number(api.getRoundNumber?.() ?? 0) || null,
+      playMs: Number(api.getPlayMs?.() ?? 0) || 0
     };
   }
 
@@ -180,6 +182,9 @@ export function attachSimBridge(api) {
       const match = api.getMatch();
       const view = api.getView();
       return detectGameOver(match.phase, view.screen);
+    },
+    advancePlay(ms) {
+      return api.advancePlay?.(ms) ?? 0;
     }
   };
   window.__playerSim = bridge;
