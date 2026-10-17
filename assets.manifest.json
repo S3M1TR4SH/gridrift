@@ -1,0 +1,39 @@
+{
+  "library": {
+    "repo": "S3M1TR4SH/asset-library",
+    "tag": "v0.1.0"
+  },
+  "assets": [
+    "tile.blue",
+    "tile.green",
+    "tile.orange",
+    "tile.pink",
+    "tile.red",
+    "tile.yellow",
+    "tile.grey",
+    "tile.back.01",
+    "ui.button_rectangle_flat.blue",
+    "ui.button_rectangle_depth_flat.blue",
+    "ui.button_round_flat.blue",
+    "ui.button_square_flat.blue",
+    "ui.icon_checkmark.blue",
+    "ui.icon_cross.blue",
+    "ui.star.blue",
+    "ui.star_outline.blue",
+    "font.kenney-future",
+    "font.kenney-blocks",
+    "sfx.click",
+    "sfx.place",
+    "sfx.error",
+    "sfx.win",
+    "sfx.line_clear",
+    "sfx.combo",
+    "sfx.game_over",
+    "icon.gridrift.icon-192",
+    "icon.gridrift.icon-512",
+    "icon.gridrift.icon-512-maskable",
+    "icon.gridrift.apple-touch-icon",
+    "icon.gridrift.favicon-32",
+    "icon.gridrift.favicon-ico"
+  ]
+}
