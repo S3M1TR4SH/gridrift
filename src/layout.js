@@ -89,3 +89,8 @@ export function dragPieceOrigin(point, lift = 0) {
     y: point.y - (Number(lift) || 0)
   };
 }
+
+export function pointerLift(pointerType, { coarse = false, touchLift = 0 } = {}) {
+  if (coarse || pointerType === 'touch') return Math.max(0, Number(touchLift) || 0);
+  return 0;
+}

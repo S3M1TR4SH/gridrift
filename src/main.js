@@ -45,7 +45,7 @@ import {
   viewModel
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
-import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerToBoard, snapOrigin, traySlots } from './layout.js';
+import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerLift, pointerToBoard, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { dangerCue, dropFeedback, placementCount, roundClearedNotice } from './danger.js';
 import { easedRun, generateTray, goalForRound, gridForRound } from './difficulty.js';
@@ -338,11 +338,11 @@ function start() {
 
   let match;
   if (progress.run) match = makeMatch(progress.run);
-  else if (retention.onboarding.enabled && coachStep !== null) {
-    onboardingStarted = performance.now();
+  else {
+    if (retention.onboarding.enabled && coachStep !== null) onboardingStarted = performance.now();
     match = freshOpening();
-    match.showHint();
-  } else match = makeMatch();
+    if (coachStep !== null) match.showHint();
+  }
   if (!progress.run) rememberCheckpoint();
 
   function trackRunStart() {
@@ -725,7 +725,7 @@ function start() {
     resetRunCounters();
     rewardKind = null;
     startEasyRun();
-    match = makeMatch();
+    match = freshOpening();
     moves = 0;
     overlay = null;
     pointer = createPointerState();
@@ -1103,8 +1103,7 @@ function start() {
 
   function liftPx() {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    if (coarse || pointerKind === 'touch') return retention.onboarding.dragOffsetPx;
-    return 0;
+    return pointerLift(pointerKind, { coarse, touchLift: retention.onboarding.dragOffsetPx });
   }
 
   function hitAt(point, piece) {
@@ -1312,6 +1311,10 @@ function start() {
         piece: active,
         lift: liftPx()
       };
+    }
+    if (pendingGameOver || state.phase === 'game_over') {
+      ghost = null;
+      drag = null;
     }
     drawScene(ctx, {
       layout,

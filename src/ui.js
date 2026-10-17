@@ -1,3 +1,5 @@
+import { ageChoice } from './flow.js';
+
 export function createUi(doc = document) {
   const overlay = doc.querySelector('#overlay');
   const score = doc.querySelector('#score');
@@ -206,13 +208,16 @@ export function createUi(doc = document) {
       }
       const action = doc.createElement('button');
       action.type = 'button';
-      action.dataset.action = 'confirm_year';
       action.textContent = 'Continue';
-      action.disabled = true;
-      select.addEventListener('change', () => {
-        action.disabled = select.value === '';
-        if (select.value) action.dataset.action = `birth_year:${select.value}`;
-      });
+      function syncYear() {
+        const choice = ageChoice(select.value);
+        action.disabled = choice.disabled;
+        if (choice.action) action.dataset.action = choice.action;
+        else delete action.dataset.action;
+      }
+      syncYear();
+      select.addEventListener('change', syncYear);
+      select.addEventListener('input', syncYear);
       panel.append(heading, select, action);
       overlay.hidden = false;
       overlay.replaceChildren(panel);

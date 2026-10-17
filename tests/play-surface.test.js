@@ -5,11 +5,48 @@ import tuning from '../config/tuning.json' with { type: 'json' };
 import { createFeedback } from '../studio-core/index.js';
 import { PERSONAS, chooseAction } from '../studio-core/sim/index.js';
 import { AGE_COPY, agePrompt, bootScreen, continueRewardLabel, viewModel } from '../src/flow.js';
-import { computeLayout, traySlots } from '../src/layout.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { BOARD_MAX_PX, computeLayout, traySlots } from '../src/layout.js';
 import { createMatch, fitsAnywhere, SHAPES } from '../src/logic.js';
 import { coachMarks, openingBoard, wordCount } from '../src/onboarding.js';
 import { mulberry32 } from '../src/rng.js';
 import { listMoves } from '../src/sim-bridge.js';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('first play and restart share the round-one opening', () => {
+  const first = openingBoard(tuning.grid);
+  const restart = openingBoard(tuning.grid);
+  assert.deepEqual(restart.board, first.board);
+  assert.deepEqual(restart.pieces, first.pieces);
+  assert.ok(first.board.flat().some(Boolean));
+  const main = readFileSync(join(root, 'src/main.js'), 'utf8');
+  assert.match(main, /else \{\s*if \(retention\.onboarding\.enabled && coachStep !== null\) onboardingStarted = performance\.now\(\);\s*match = freshOpening\(\);/);
+  assert.match(main, /function restart\(\) \{[\s\S]*?match = freshOpening\(\);/);
+});
+
+test('desktop board stays within 560px and uses square cells', () => {
+  assert.equal(BOARD_MAX_PX, 560);
+  const wide = computeLayout({ width: 1920, height: 1080, grid: 8 });
+  assert.equal(wide.maxBoard, 560);
+  assert.equal(wide.cellAspect, 1);
+  assert.equal(wide.boardSize, wide.cell * wide.grid);
+  assert.ok(wide.boardSize <= 560);
+  assert.equal(wide.canvasWidth, wide.boardSize);
+});
+
+test('portrait HUD stays at least 16px and the tray has no dead gap', () => {
+  const css = readFileSync(join(root, 'src/styles.css'), 'utf8');
+  assert.match(css, /header h1, \.goal, \.stats \{ font-size: 16px/);
+  assert.match(css, /@media \(max-width: 420px\) \{\s*header h1 \{ font-size: 16px; \}/);
+  const phone = computeLayout({ width: 390, height: 844, grid: 6, playHeight: 700 });
+  assert.equal(phone.gap, 16);
+  assert.equal(phone.trayTop, phone.boardSize + phone.gap);
+  assert.equal(phone.canvasHeight, phone.trayTop + phone.trayHeight);
+  assert.equal(phone.cellAspect, 1);
+});
 
 test('launch asks for a birth year before play', () => {
   assert.equal(bootScreen(), 'age_gate');

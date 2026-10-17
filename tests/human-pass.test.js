@@ -44,6 +44,9 @@ test('unplaceable tray pieces are hatched and low space uses the danger cue', ()
   assert.equal(critical.sound, 'sfx.danger');
   const render = readFileSync(join(root, 'src/render.js'), 'utf8');
   assert.match(render, /trayPieceStyle\(fitsAnywhere\(board, piece\.shape\)\)/);
+  assert.match(render, /drawCell\(ctx, x \* layout\.cell, y \* layout\.cell, layout\.cell, color, board\[y\]\[x\] \? 1 : 0\.9\)/);
+  assert.equal(blocked.hatch, true);
+  assert.notEqual(blocked.alpha, 1);
   const hud = readFileSync(join(root, 'src/main.js'), 'utf8');
   assert.match(hud, /lowSpace: dangerCue\(/);
 });

@@ -12,6 +12,7 @@ import {
   planBreak,
   planRoundAdvance,
   rowsForContinue,
+  ageChoice,
   settleGameOver,
   shouldIgnoreInput,
   viewModel
@@ -20,7 +21,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createPointerState, pointerReducer } from '../src/input.js';
-import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerToBoard, snapOrigin } from '../src/layout.js';
+import { BOARD_MAX_PX, CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerLift, pointerToBoard, snapOrigin } from '../src/layout.js';
 
 test('ad screens keep their actions off the previous button slot', () => {
   const round = viewModel({ screen: 'round_complete', roundName: 'Shallow drift', score: 12, bestStreak: 2 });
@@ -36,7 +37,7 @@ test('ad screens keep their actions off the previous button slot', () => {
   const watch = confirm.actions.find((action) => action.id === 'watch');
   assert.equal(decline.slot, offer.slot);
   assert.notEqual(watch.slot, offer.slot);
-  assert.equal(over.actions.some((action) => action.id === 'restart'), true);
+  assert.equal(over.actions.some((action) => action.id === 'ask_restart'), true);
   assert.equal(over.actions.some((action) => action.id === 'close_ad'), false);
   assert.ok(CONTROL_GAP_PX >= LIMITS.ads.minControlSeparationPx);
 });
@@ -150,11 +151,11 @@ test('a second drag is accepted immediately', () => {
 
 test('game over offers an opt-in continue once and always offers restart', () => {
   const over = viewModel({ screen: 'game_over', rewarded: true, score: 40, bestStreak: 3 });
-  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'restart']);
+  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'ask_restart']);
   const reward = over.actions.find((action) => action.id === 'offer_continue');
   assert.match(reward.label, /Watch ad: clear 3 rows/);
   assert.equal(reward.primary, false);
-  assert.equal(over.actions.find((action) => action.id === 'restart').primary, true);
+  assert.equal(over.actions.find((action) => action.id === 'ask_restart').primary, true);
   assert.equal(over.separated, false);
   assert.match(over.body, /Back to Round 1, best kept/);
   const checkpoint = viewModel({
@@ -169,7 +170,7 @@ test('game over offers an opt-in continue once and always offers restart', () =>
   assert.equal(checkpoint.actions.find((action) => action.id === 'retry_round').label, 'Retry round');
   assert.equal(checkpoint.actions.find((action) => action.id === 'retry_round').primary, true);
   const spent = viewModel({ screen: 'game_over', rewarded: false, score: 40, bestStreak: 3 });
-  assert.deepEqual(spent.actions.map((action) => action.id), ['restart']);
+  assert.deepEqual(spent.actions.map((action) => action.id), ['ask_restart']);
   const restart = viewModel({ screen: 'restart_confirm', bestScore: 40 });
   assert.match(restart.body, /Back to Round 1/);
   assert.match(restart.body, /Best 40 kept/);
@@ -207,7 +208,7 @@ test('reroll and double score share the hint move floor and are once each', () =
   });
   assert.ok(doubled.actions.some((action) => action.id === 'offer_continue'));
   assert.ok(doubled.actions.some((action) => action.id === 'offer_double'));
-  assert.ok(doubled.actions.some((action) => action.id === 'restart' || action.id === 'retry_round'));
+  assert.ok(doubled.actions.some((action) => action.id === 'ask_restart' || action.id === 'retry_round'));
   const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'reroll' });
   assert.match(confirm.body, /new tray/i);
   assert.equal(confirm.actions.find((action) => action.id === 'decline').label, 'No thanks');
@@ -262,4 +263,42 @@ test('welcome back shows yesterday, the daily, and the streak', () => {
   assert.equal(welcome.separated, false);
   assert.equal(viewModel({ screen: 'ad_break' }).separated, true);
   assert.equal(viewModel({ screen: 'rewarded_confirm', kind: 'hint' }).separated, true);
+});
+
+test('drop target follows the pointer and touch lifts the piece', () => {
+  const cell = 40;
+  const pointer = { x: cell * 3 + 8, y: cell * 4 + 8 };
+  const mouseLift = pointerLift('mouse', { touchLift: 60 });
+  const touchLift = pointerLift('touch', { touchLift: cell });
+  assert.equal(mouseLift, 0);
+  assert.equal(touchLift, cell);
+  const mouse = dragPieceOrigin(pointer, mouseLift);
+  const touch = dragPieceOrigin(pointer, touchLift);
+  assert.deepEqual(snapOrigin(mouse.x, mouse.y, cell), { x: 3, y: 4 });
+  assert.deepEqual(snapOrigin(touch.x, touch.y, cell), { x: 3, y: 3 });
+  assert.ok(touch.y < pointer.y);
+  const wide = computeLayout({ width: 1400, height: 900, grid: 8 });
+  const rect = { left: 10, top: 30, width: wide.canvasWidth / 2, height: wide.canvasHeight / 2 };
+  const clientX = rect.left + ((2 + 0.25) * wide.cell) / 2;
+  const clientY = rect.top + ((5 + 0.25) * wide.cell) / 2;
+  const boardPoint = pointerToBoard(clientX, clientY, rect, wide);
+  assert.deepEqual(snapOrigin(boardPoint.x, boardPoint.y, wide.cell), { x: 2, y: 5 });
+  assert.equal(BOARD_MAX_PX, 560);
+});
+
+test('game over waits until the clear animation settles', () => {
+  assert.equal(settleGameOver({ gameOver: true, lines: 2, animating: true }), false);
+  assert.equal(settleGameOver({ gameOver: true, lines: 2, animating: false }), true);
+  assert.equal(settleGameOver({ gameOver: false, lines: 2, animating: false }), false);
+  const main = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/main.js'), 'utf8');
+  assert.match(main, /pointer = createPointerState\(\);\s*if \(settleGameOver\(\{ gameOver: true, lines: result\.lines, animating: result\.lines > 0 \}\)\) finishGame\(\);\s*else pendingGameOver = \{ lines: result\.lines \};/);
+  assert.match(main, /if \(pendingGameOver \|\| state\.phase === 'game_over'\) \{\s*ghost = null;\s*drag = null;\s*\}/);
+});
+
+test('the age screen continue button is ready on the first click', () => {
+  assert.deepEqual(ageChoice(''), { disabled: true, action: '' });
+  assert.deepEqual(ageChoice('1990'), { disabled: false, action: 'birth_year:1990' });
+  const ui = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui.js'), 'utf8');
+  assert.match(ui, /if \(overlay\.dataset\.gate === 'age'\) return;/);
+  assert.match(ui, /select\.addEventListener\('change', syncYear\);\s*select\.addEventListener\('input', syncYear\);/);
 });

@@ -38,6 +38,12 @@ export function canOfferHint({
 
 export const AGE_COPY = 'What year were you born?';
 
+export function ageChoice(year) {
+  const value = String(year ?? '').trim();
+  if (!/^\d{4}$/.test(value)) return { disabled: true, action: '' };
+  return { disabled: false, action: `birth_year:${value}` };
+}
+
 export function bootScreen(consent) {
   if (!consent?.birthYear) return 'age_gate';
   if (consent.needsAnalyticsPrompt) return 'stats_consent';
@@ -210,7 +216,7 @@ export function viewModel(model) {
     if (model.checkpoint) {
       actions.push({ id: 'retry_round', label: 'Retry round', slot: 'lower', primary: true });
     } else {
-      actions.push({ id: 'restart', label: 'Back to Round 1', slot: 'lower', primary: true });
+      actions.push({ id: 'ask_restart', label: 'Back to Round 1', slot: 'lower', primary: true });
     }
     const outcome = gameOverCopy({ checkpoint: Boolean(model.checkpoint), round: model.roundNumber });
     return card({
