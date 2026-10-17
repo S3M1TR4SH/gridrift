@@ -5,7 +5,9 @@ import {
   HINT_MIN_PLAY_MS,
   INPUT_GUARD_MS,
   canOfferContinue,
+  canOfferDouble,
   canOfferHint,
+  canOfferReroll,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
@@ -111,6 +113,34 @@ test('game over offers an opt-in continue once and always offers restart', () =>
   const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'continue' });
   assert.equal(confirm.actions.some((action) => action.id === 'decline'), true);
   assert.equal(confirm.actions.some((action) => action.id === 'watch'), true);
+});
+
+test('reroll and double score are opt-in and once each', () => {
+  assert.equal(canOfferReroll({ stuck: false, rerollsUsed: 0, rewardedAllowed: true }), false);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: true }), true);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 1, rewardedAllowed: true }), false);
+  assert.equal(canOfferReroll({ stuck: true, rerollsUsed: 0, rewardedAllowed: false }), false);
+  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: true }), true);
+  assert.equal(canOfferDouble({ doublesUsed: 1, rewardedAllowed: true }), false);
+  assert.equal(canOfferDouble({ doublesUsed: 0, rewardedAllowed: false }), false);
+  const doubled = viewModel({
+    screen: 'game_over',
+    rewarded: true,
+    doubleScore: true,
+    score: 40,
+    bestStreak: 3
+  });
+  assert.ok(doubled.actions.some((action) => action.id === 'offer_continue'));
+  assert.ok(doubled.actions.some((action) => action.id === 'offer_double'));
+  assert.ok(doubled.actions.some((action) => action.id === 'restart'));
+  const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'reroll' });
+  assert.match(confirm.body, /new tray/i);
+  assert.equal(confirm.actions.find((action) => action.id === 'decline').label, 'No thanks');
+  const scoreConfirm = viewModel({ screen: 'rewarded_confirm', kind: 'double_score' });
+  assert.match(scoreConfirm.body, /doubled score/i);
+  const results = viewModel({ screen: 'round_complete', doubleScore: true, score: 12, bestStreak: 1 });
+  assert.ok(results.actions.some((action) => action.id === 'offer_double'));
+  assert.ok(results.actions.some((action) => action.id === 'next_round'));
 });
 
 test('a rewarded hint waits two minutes unless the player is stuck, and only once', () => {

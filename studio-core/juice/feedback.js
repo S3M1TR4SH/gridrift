@@ -11,11 +11,13 @@ const PARTICLE_IDS = [
 
 const STREAK_IDS = ['sfx.streak.1', 'sfx.streak.2', 'sfx.streak.3'];
 
+const MAX_EFFECT_MS = 399;
+
 const JUICE_DEFAULTS = {
   flashMs: 180,
   particleCount: 12,
-  particleLifeMs: 480,
-  popupMs: 800,
+  particleLifeMs: 360,
+  popupMs: 320,
   shakeMs: 240,
   shakePx: 5,
   invalidShakeMs: 200,
@@ -41,6 +43,10 @@ function clamp(value, min, max, fallback) {
   return Math.min(max, Math.max(min, number));
 }
 
+function effectMs(value, fallback) {
+  return clamp(value, 0, MAX_EFFECT_MS, Math.min(fallback, MAX_EFFECT_MS));
+}
+
 function assetId(value, fallback) {
   if (typeof value !== 'string' || !value || /https?:/i.test(value) || value.includes('://')) return fallback;
   return value;
@@ -61,15 +67,15 @@ export function resolveJuice(config = {}) {
       .slice(0, 8)
     : JUICE_DEFAULTS.streakSteps.slice();
   return {
-    flashMs: clamp(source.flashMs, 0, 2000, JUICE_DEFAULTS.flashMs),
+    flashMs: effectMs(source.flashMs, JUICE_DEFAULTS.flashMs),
     particleCount: Math.round(clamp(source.particleCount, 0, 40, JUICE_DEFAULTS.particleCount)),
-    particleLifeMs: clamp(source.particleLifeMs, 0, 4000, JUICE_DEFAULTS.particleLifeMs),
-    popupMs: clamp(source.popupMs, 0, 4000, JUICE_DEFAULTS.popupMs),
-    shakeMs: clamp(source.shakeMs, 0, 2000, JUICE_DEFAULTS.shakeMs),
+    particleLifeMs: effectMs(source.particleLifeMs, JUICE_DEFAULTS.particleLifeMs),
+    popupMs: effectMs(source.popupMs, JUICE_DEFAULTS.popupMs),
+    shakeMs: effectMs(source.shakeMs, JUICE_DEFAULTS.shakeMs),
     shakePx: clamp(source.shakePx, 0, 16, JUICE_DEFAULTS.shakePx),
-    invalidShakeMs: clamp(source.invalidShakeMs, 0, 2000, JUICE_DEFAULTS.invalidShakeMs),
+    invalidShakeMs: effectMs(source.invalidShakeMs, JUICE_DEFAULTS.invalidShakeMs),
     invalidShakePx: clamp(source.invalidShakePx, 0, 16, JUICE_DEFAULTS.invalidShakePx),
-    snapBackMs: clamp(source.snapBackMs, 0, 2000, JUICE_DEFAULTS.snapBackMs),
+    snapBackMs: effectMs(source.snapBackMs, JUICE_DEFAULTS.snapBackMs),
     dragLiftPx: clamp(source.dragLiftPx, 0, 160, JUICE_DEFAULTS.dragLiftPx),
     streakSteps: steps,
     sounds: {
@@ -100,9 +106,15 @@ function streakSound(sounds, level) {
   return list[Math.max(0, index)] || null;
 }
 
-export function createFeedback({ config, now = () => 0, random = Math.random } = {}) {
+export function createFeedback({
+  config,
+  now = () => 0,
+  random = Math.random,
+  reducedMotion = false
+} = {}) {
   const juice = resolveJuice(config);
   const effects = [];
+  let reduced = Boolean(reducedMotion);
 
   function particleId() {
     const ids = juice.particleIds;
@@ -114,6 +126,8 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
     const rows = Array.isArray(event.rows) ? event.rows : [];
     const cols = Array.isArray(event.cols) ? event.cols : [];
     const lines = rows.length + cols.length;
+    const intensity = Math.max(1, lines);
+    const pitch = 1 + Math.max(0, lines - 1) * 0.12;
     const level = celebrationLevel(event.streak || 0, juice.streakSteps);
     const sounds = [];
     if (lines > 0) sounds.push(juice.sounds.clear);
@@ -122,7 +136,10 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
     if (streakId) sounds.push(streakId);
     const cell = event.cell || 1;
     const grid = event.grid || 1;
-    const count = Math.min(40, juice.particleCount * Math.max(1, lines));
+    const count = reduced
+      ? 0
+      : Math.min(40, Math.round(juice.particleCount * (lines <= 1 ? 1 : lines)));
+    const shakeScale = lines >= 2 ? 1 + Math.max(0, lines - 2) * 0.25 : 0.35;
     const particles = [];
     for (let i = 0; i < count; i += 1) {
       const useRow = rows.length && (i % 2 === 0 || !cols.length);
@@ -153,9 +170,9 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
       kind: 'clear',
       born,
       flashUntil: born + juice.flashMs,
-      shakeUntil: born + juice.shakeMs,
+      shakeUntil: born + (reduced ? 0 : juice.shakeMs),
       popupUntil: born + juice.popupMs,
-      shakePx: juice.shakePx * (1 + Math.max(0, level - 1) * 0.35),
+      shakePx: reduced ? 0 : juice.shakePx * shakeScale * (1 + Math.max(0, level - 1) * 0.35),
       rows,
       cols,
       color: event.color || '#ffffff',
@@ -165,7 +182,14 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
       particles,
       level
     });
-    return { sounds, level, flashId: juice.flashId, particleIds: juice.particleIds.slice() };
+    return {
+      sounds,
+      level,
+      pitch,
+      intensity,
+      flashId: juice.flashId,
+      particleIds: juice.particleIds.slice()
+    };
   }
 
   function invalid(event = {}) {
@@ -173,8 +197,8 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
     effects.push({
       kind: 'invalid',
       born,
-      shakeUntil: born + juice.invalidShakeMs,
-      shakePx: juice.invalidShakePx,
+      shakeUntil: born + (reduced ? 0 : juice.invalidShakeMs),
+      shakePx: reduced ? 0 : juice.invalidShakePx,
       snapUntil: born + juice.snapBackMs,
       fromX: event.fromX || 0,
       fromY: event.fromY || 0,
@@ -282,6 +306,9 @@ export function createFeedback({ config, now = () => 0, random = Math.random } =
   return {
     get config() {
       return juice;
+    },
+    setReducedMotion(value) {
+      reduced = Boolean(value);
     },
     clear,
     invalid,

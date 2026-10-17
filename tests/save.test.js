@@ -30,9 +30,19 @@ function run() {
   };
 }
 
+const EMPTY_SAVE = {
+  bestScore: 0,
+  tutorialSeen: false,
+  sessions: 0,
+  installDay: '',
+  settings: { reducedMotion: null, haptics: null },
+  daily: { lastCompleted: '', streak: 0, freezes: 0, marks: 0 },
+  run: null
+};
+
 test('a run round-trips and an empty store has no run', () => {
   const store = createSaveStore(memoryStorage());
-  assert.deepEqual(store.load(), { bestScore: 0, tutorialSeen: false, run: null });
+  assert.deepEqual(store.load(), EMPTY_SAVE);
   store.save({ bestScore: 12, tutorialSeen: false, run: run() });
   const loaded = store.load();
   assert.equal(loaded.bestScore, 12);
@@ -78,11 +88,36 @@ test('hint progress stays on the run and is capped at one use', () => {
   assert.equal(loaded.run.sawStuck, true);
 });
 
+test('daily progress, session count, and toggles stay on the device', () => {
+  const store = createSaveStore(memoryStorage());
+  store.save({
+    bestScore: 3,
+    tutorialSeen: true,
+    sessions: 2,
+    installDay: '2026-10-16',
+    settings: { reducedMotion: true, haptics: false },
+    daily: { lastCompleted: '2026-10-16', streak: 4, freezes: 1, marks: 2 },
+    run: { ...run(), rerollsUsed: 3, doublesUsed: 2, mode: 'daily' }
+  });
+  const loaded = store.load();
+  assert.equal(loaded.sessions, 2);
+  assert.equal(loaded.installDay, '2026-10-16');
+  assert.equal(loaded.settings.reducedMotion, true);
+  assert.equal(loaded.settings.haptics, false);
+  assert.equal(loaded.daily.streak, 4);
+  assert.equal(loaded.daily.freezes, 1);
+  assert.equal(loaded.daily.lastCompleted, '2026-10-16');
+  assert.equal(loaded.daily.marks, 2);
+  assert.equal(loaded.run.rerollsUsed, 1);
+  assert.equal(loaded.run.doublesUsed, 1);
+  assert.equal(loaded.run.mode, 'daily');
+});
+
 test('a corrupt payload does not restore a run', () => {
   const storage = memoryStorage();
   const store = createSaveStore(storage);
   storage.setItem(store.key, '{');
-  assert.deepEqual(store.load(), { bestScore: 0, tutorialSeen: false, run: null });
+  assert.deepEqual(store.load(), EMPTY_SAVE);
   storage.setItem(store.key, JSON.stringify({
     bestScore: 8,
     tutorialSeen: false,

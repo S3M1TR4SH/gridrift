@@ -18,7 +18,7 @@ export const LIMITS = deepFreeze({
     rewarded: {
       maxPerSession: 3,
       minSecondsBetween: 45,
-      placements: ['continue', 'hint']
+      placements: ['continue', 'hint', 'reroll', 'double_score']
     }
   },
   difficulty: {

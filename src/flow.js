@@ -32,6 +32,21 @@ export function canOfferHint({ elapsedMs = 0, stuck = false, hintsUsed = 0, rewa
   return elapsedMs >= HINT_MIN_PLAY_MS;
 }
 
+export function canOfferReroll({ stuck = false, rerollsUsed = 0, rewardedAllowed = false } = {}) {
+  return Boolean(rewardedAllowed) && Boolean(stuck) && rerollsUsed < 1;
+}
+
+export function canOfferDouble({ doublesUsed = 0, rewardedAllowed = false } = {}) {
+  return Boolean(rewardedAllowed) && doublesUsed < 1;
+}
+
+const REWARD_LABELS = {
+  hint: 'a hint',
+  continue: 'a continue',
+  reroll: 'a new tray',
+  double_score: 'a doubled score'
+};
+
 export function rowsForContinue(requested) {
   const count = Number(requested) || 1;
   return Math.min(LIMITS.rewardedEffects.maxContinueRowsCleared, Math.max(1, Math.floor(count)));
@@ -122,15 +137,22 @@ export function viewModel(model) {
     });
   }
   if (model.screen === 'round_complete') {
+    const actions = [{ id: 'next_round', label: 'Next', slot: 'lower', primary: true }];
+    if (model.doubleScore) {
+      actions.unshift({ id: 'offer_double', label: 'Double score', slot: 'upper', primary: false });
+    }
     return card({
       screen: 'round_complete',
       title: `${model.roundName ?? 'Round'} cleared`,
       body: `Score ${score}. Best streak ${best}.`,
-      actions: [{ id: 'next_round', label: 'Next', slot: 'lower', primary: true }]
+      actions
     });
   }
   if (model.screen === 'game_over') {
     const actions = [{ id: 'restart', label: 'Restart', slot: 'lower', primary: true }];
+    if (model.doubleScore) {
+      actions.unshift({ id: 'offer_double', label: 'Double score', slot: 'upper', primary: false });
+    }
     if (model.rewarded) {
       actions.unshift({ id: 'offer_continue', label: 'Continue', slot: 'upper', primary: false });
     }
@@ -143,7 +165,7 @@ export function viewModel(model) {
     });
   }
   if (model.screen === 'rewarded_confirm') {
-    const label = model.kind === 'hint' ? 'a hint' : 'a continue';
+    const label = REWARD_LABELS[model.kind] || REWARD_LABELS.continue;
     return card({
       screen: 'rewarded_confirm',
       title: 'Optional reward',

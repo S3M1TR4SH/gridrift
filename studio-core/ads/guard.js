@@ -29,6 +29,9 @@ export function createGuardedAds({ adapter, pacer } = {}) {
       return pacer.canOfferRewarded(placement);
     },
     showInterstitial({ breakType } = {}) {
+      if (typeof pacer.consumeInterstitialSkip === 'function' && pacer.consumeInterstitialSkip(breakType)) {
+        return { shown: false, rewarded: false, reason: 'rewarded_skip' };
+      }
       if (!pacer.canShowInterstitial(breakType)) {
         return { shown: false, rewarded: false, reason: 'guardrail' };
       }

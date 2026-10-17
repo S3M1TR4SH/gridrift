@@ -13,8 +13,8 @@
   "juice": {
     "flashMs": 180,
     "particleCount": 12,
-    "particleLifeMs": 480,
-    "popupMs": 800,
+    "particleLifeMs": 360,
+    "popupMs": 320,
     "shakeMs": 240,
     "shakePx": 5,
     "invalidShakeMs": 200,

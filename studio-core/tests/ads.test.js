@@ -104,6 +104,9 @@ test('guardrails cap interstitials and rewarded grants for every adapter', () =>
       clock.advance(validPacing.ads.interstitial.minSecondsBetween * 1000);
       clock.pacer.recordRoundEnded();
       clock.pacer.recordRoundEnded();
+      const skipped = ads.showInterstitial({ breakType: 'between_rounds' });
+      assert.equal(skipped.shown, false);
+      assert.equal(skipped.reason, 'rewarded_skip');
       assert.equal(ads.showInterstitial({ breakType: 'between_rounds' }).shown, true);
       assert.equal(adapter.calls.filter((call) => call[0] === 'rewarded').length, 1);
     } else {

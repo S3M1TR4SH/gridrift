@@ -84,6 +84,82 @@ test('difficulty ramps through pools without a fail bias', () => {
   assert.equal(pacer.failBias, 0);
 });
 
+test('the first session never shows an interstitial', () => {
+  let now = 0;
+  const first = createPacer({ pacing: validPacing, now: () => now, sessionNumber: 1 });
+  first.recordRoundEnded();
+  first.recordRoundEnded();
+  now += 1_000_000;
+  assert.equal(first.canShowInterstitial('between_rounds'), false);
+  assert.equal(first.canShowInterstitial('game_over'), false);
+  assert.equal(first.canShowInterstitial('pause'), false);
+});
+
+test('a rewarded ad cools down the next interstitial and then skips one', () => {
+  let now = 10_000;
+  const pacer = createPacer({ pacing: validPacing, now: () => now, sessionNumber: 3 });
+  pacer.recordRoundEnded();
+  pacer.recordRoundEnded();
+  assert.equal(pacer.canShowInterstitial('game_over'), true);
+  pacer.recordAd('rewarded');
+  pacer.recordRoundEnded();
+  pacer.recordRoundEnded();
+  assert.equal(pacer.canShowInterstitial('game_over'), false);
+  assert.equal(pacer.consumeInterstitialSkip('game_over'), false);
+  now += validPacing.ads.interstitial.minSecondsBetween * 1000;
+  pacer.recordRoundEnded();
+  pacer.recordRoundEnded();
+  assert.equal(pacer.canShowInterstitial('game_over'), false);
+  assert.equal(pacer.consumeInterstitialSkip('game_over'), true);
+  assert.equal(pacer.canShowInterstitial('between_rounds'), true);
+});
+
+test('interval arms stay at or above the guardrail', () => {
+  const pacing = structuredClone(validPacing);
+  pacing.ads.interstitial.intervalArms = [30, 90, 120, 180];
+  pacing.ads.interstitial.minSecondsBetween = 30;
+  const invalid = validateGameConfig({
+    pacing,
+    tuning: {
+      grid: 6,
+      traySize: 3,
+      continueClears: 3,
+      levelOrder: ['round-01'],
+      score: { place: 1, line: 10, comboBonusPerExtraLine: 5, streakMultiplierStep: 0.5, maxStreakMultiplier: 4 }
+    }
+  });
+  assert.equal(invalid.ok, false);
+
+  let now = 0;
+  const pacer = createPacer({ pacing, now: () => now, sessionNumber: 2 });
+  assert.ok(pacer.intervalArms.every((arm) => arm >= LIMITS.ads.minSecondsBetween));
+  assert.equal(pacer.interstitialSeconds, LIMITS.ads.minSecondsBetween);
+  pacer.recordRoundEnded();
+  pacer.recordRoundEnded();
+  pacer.recordAd('interstitial');
+  now += (LIMITS.ads.minSecondsBetween * 1000) - 1000;
+  pacer.recordRoundEnded();
+  pacer.recordRoundEnded();
+  assert.equal(pacer.canShowInterstitial('between_rounds'), false);
+  now += 1000;
+  assert.equal(pacer.canShowInterstitial('between_rounds'), true);
+
+  const allowed = structuredClone(validPacing);
+  allowed.ads.interstitial.intervalArms = [90, 120, 180];
+  allowed.ads.interstitial.minSecondsBetween = 120;
+  const valid = validateGameConfig({
+    pacing: allowed,
+    tuning: {
+      grid: 6,
+      traySize: 3,
+      continueClears: 3,
+      levelOrder: ['round-01'],
+      score: { place: 1, line: 10, comboBonusPerExtraLine: 5, streakMultiplierStep: 0.5, maxStreakMultiplier: 4 }
+    }
+  });
+  assert.equal(valid.ok, true, JSON.stringify(valid.violations, null, 2));
+});
+
 test('neutralize strips an over-limit config back inside the guardrails', () => {
   const over = JSON.parse(readFileSync(join(here, 'fixtures', 'over-limit-pacing.json'), 'utf8'));
   const safe = neutralizePacing(over);

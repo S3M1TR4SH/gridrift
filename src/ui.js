@@ -8,6 +8,10 @@ export function createUi(doc = document) {
   const combo = doc.querySelector('#combo');
   const hint = doc.querySelector('#hint');
   const hintNote = doc.querySelector('#hint-note');
+  const reroll = doc.querySelector('#reroll');
+  const daily = doc.querySelector('#daily');
+  const motion = doc.querySelector('#motion');
+  const haptics = doc.querySelector('#haptics');
   const install = doc.querySelector('#install');
   const mute = doc.querySelector('#mute');
   const title = doc.querySelector('#title');
@@ -25,6 +29,10 @@ export function createUi(doc = document) {
     if (hint.disabled) return;
     onAction('offer_hint');
   });
+  reroll.addEventListener('click', () => onAction('offer_reroll'));
+  daily.addEventListener('click', () => onAction('daily'));
+  motion.addEventListener('click', () => onAction('motion'));
+  haptics.addEventListener('click', () => onAction('haptics'));
   install.addEventListener('click', () => onAction('install'));
   mute.addEventListener('click', () => onAction('mute'));
 
@@ -71,6 +79,19 @@ export function createUi(doc = document) {
         hint.hidden = false;
         hint.disabled = hud.hint === 'soon';
         hint.textContent = hud.hint === 'soon' ? 'Hint soon' : 'Hint';
+      }
+      if (reroll) reroll.hidden = hud.reroll !== 'ready';
+      if (daily) {
+        daily.textContent = hud.dailyLabel || 'Daily';
+        daily.setAttribute('aria-pressed', hud.dailyOn ? 'true' : 'false');
+      }
+      if (motion) {
+        motion.textContent = hud.reducedMotion ? 'Reduced motion' : 'Motion';
+        motion.setAttribute('aria-pressed', hud.reducedMotion ? 'true' : 'false');
+      }
+      if (haptics) {
+        haptics.textContent = hud.haptics ? 'Haptics' : 'Haptics off';
+        haptics.setAttribute('aria-pressed', hud.haptics ? 'true' : 'false');
       }
       install.hidden = !hud.install;
       mute.textContent = hud.muted ? 'Unmute' : 'Mute';

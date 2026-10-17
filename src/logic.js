@@ -248,6 +248,7 @@ export function createMatch({
   let totalClears = 0;
   let phase = 'playing';
   let hint = null;
+  let doubled = false;
 
   function deal() {
     const dealt = dealPieces({
@@ -358,6 +359,18 @@ export function createMatch({
       phase = 'playing';
       deal();
       return { gameOver: phase === 'game_over', score: points };
+    },
+    reroll() {
+      if (phase !== 'playing') return { ok: false, gameOver: phase === 'game_over' };
+      hint = null;
+      deal();
+      return { ok: true, gameOver: phase === 'game_over' };
+    },
+    doubleScore() {
+      if (doubled) return { ok: false, score: points };
+      doubled = true;
+      points *= 2;
+      return { ok: true, score: points };
     },
     showHint() {
       let best = null;

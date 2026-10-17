@@ -16,10 +16,13 @@ import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
 import { createInstallController } from '../studio-core/pwa/install.js';
 import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
+import { completeDaily, dateSeed, earnFreeze, formatLocalDate } from './daily.js';
 import {
   INPUT_GUARD_MS,
   canOfferContinue,
+  canOfferDouble,
   canOfferHint,
+  canOfferReroll,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
@@ -30,6 +33,7 @@ import { createPointerState, pointerReducer } from './input.js';
 import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { canPlace, createMatch, isStuck } from './logic.js';
+import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
 import { createSaveStore } from './save.js';
@@ -82,9 +86,25 @@ function start() {
   const consentStore = createConsentStore(storage);
   let consent = consentStore.load();
   const tracker = createTracker({ getConsent: () => consent });
-  const pacer = createPacer({ pacing, isChild: () => Boolean(consent?.isChild) });
+  const pacer = createPacer({
+    pacing,
+    isChild: () => Boolean(consent?.isChild),
+    sessionNumber: (progress.sessions || 0) + 1
+  });
   const ads = createGuardedAds({ pacer });
-  const feedback = createFeedback({ config: tuning.juice, now: () => performance.now() });
+  let reducedMotion = initialMotion({
+    stored: progress.settings?.reducedMotion ?? null,
+    query: typeof matchMedia === 'function' ? matchMedia.bind(window) : null
+  });
+  let hapticsOn = initialHaptics({ stored: progress.settings?.haptics ?? null });
+  let sessions = progress.sessions || 0;
+  let installDay = progress.installDay || formatLocalDate(new Date());
+  let daily = progress.daily || { lastCompleted: '', streak: 0, freezes: 0, marks: 0 };
+  const feedback = createFeedback({
+    config: tuning.juice,
+    reducedMotion,
+    now: () => performance.now()
+  });
   const audio = createAudio(registry);
   const install = createInstallController();
   const ui = createUi(document);
@@ -101,8 +121,11 @@ function start() {
   let levelIndex = progress.run?.levelIndex || 0;
   let continueUses = progress.run?.continueUses || 0;
   let hintsUsed = progress.run?.hintsUsed || 0;
+  let rerollsUsed = progress.run?.rerollsUsed || 0;
+  let doublesUsed = progress.run?.doublesUsed || 0;
   let playMs = progress.run?.playMs || 0;
   let sawStuck = progress.run?.sawStuck === true;
+  let mode = progress.run?.mode === 'daily' ? 'daily' : 'arcade';
   let lastTick = performance.now();
   let pointer = createPointerState();
   let pointerKind = 'mouse';
@@ -122,7 +145,9 @@ function start() {
       grid: tuning.grid,
       traySize: tuning.traySize,
       score: tuning.score,
-      rng: mulberry32((Date.now() ^ (levelIndex + 1) * 997) >>> 0),
+      rng: mulberry32(mode === 'daily'
+        ? dateSeed(formatLocalDate(new Date()))
+        : ((Date.now() ^ ((levelIndex + 1) * 997)) >>> 0)),
       targetClears: saved?.targetClears || level().targetClears,
       poolFor: (clears) => pacer.shapePool(clears),
       palette,
@@ -142,6 +167,7 @@ function start() {
   function noteSession() {
     if (sessionNoted || screen() !== 'play') return;
     sessionNoted = true;
+    sessions += 1;
     tracker.track('session_start', { game: 'gridrift' });
     tracker.track('round_start', { round: level().id });
   }
@@ -164,6 +190,10 @@ function start() {
     progress = saveStore.save({
       bestScore: Math.max(progress.bestScore || 0, state.score),
       tutorialSeen: progress.tutorialSeen === true,
+      sessions,
+      installDay,
+      settings: { reducedMotion, haptics: hapticsOn },
+      daily,
       run: {
         board: state.board,
         pieces: state.pieces.map((piece) => (piece ? {
@@ -180,8 +210,11 @@ function start() {
         levelIndex,
         continueUses,
         hintsUsed,
+        rerollsUsed,
+        doublesUsed,
         playMs: Math.floor(playMs),
         sawStuck,
+        mode,
         phase: state.phase
       }
     });
@@ -194,16 +227,47 @@ function start() {
     publishOverlay(true);
   }
 
-  function playSounds(ids) {
-    for (const id of ids) audio.play(id);
+  function playSounds(ids, rate = 1) {
+    for (const id of ids) audio.play(id, rate);
+  }
+
+  function vibrateFor(lines) {
+    const supported = typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function';
+    if (!shouldVibrate({ enabled: hapticsOn, reducedMotion, supported })) return;
+    if (lines < 2) return;
+    navigator.vibrate(lines >= 3 ? [16, 20, 16] : [12]);
+  }
+
+  function maybeEarnFreeze() {
+    const earned = Math.floor((match.state.totalClears || 0) / 8);
+    if (earned <= (daily.marks || 0)) return;
+    let next = daily;
+    for (let mark = daily.marks || 0; mark < earned; mark += 1) next = earnFreeze(next, 'play');
+    daily = { ...next, marks: earned };
+  }
+
+  function interstitialAllowed(breakType) {
+    if (pacer.consumeInterstitialSkip(breakType)) return false;
+    return ads.canShowInterstitial(breakType);
+  }
+
+  function doubleReady() {
+    if (consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('double_score')) return false;
+    return canOfferDouble({
+      doublesUsed,
+      rewardedAllowed: ads.canOfferRewarded('double_score')
+    });
   }
 
   function finishRound() {
     pacer.recordRoundEnded();
+    if (mode === 'daily') daily = completeDaily(daily, formatLocalDate(new Date()));
     tracker.track('round_complete', { score: match.state.score, round: level().id });
     audio.play('sfx.win');
     persist();
-    show({ screen: 'round_complete' });
+    show({ screen: 'round_complete', doubleScore: doubleReady() });
   }
 
   function finishGame() {
@@ -211,11 +275,12 @@ function start() {
     tracker.track('game_over', { score: match.state.score });
     audio.play('sfx.game_over');
     const rewardedAllowed = ads.canOfferRewarded('continue');
+    const continueOffered = canOfferContinue(continueUses, rewardedAllowed);
     const plan = planBreak({
       type: 'game_over',
-      interstitialAllowed: ads.canShowInterstitial('game_over'),
+      interstitialAllowed: continueOffered ? false : interstitialAllowed('game_over'),
       rewardedAllowed,
-      continueUsed: !canOfferContinue(continueUses, true)
+      continueUsed: !continueOffered
     });
     persist();
     if (plan === 'ad_then_results') {
@@ -226,7 +291,11 @@ function start() {
         return;
       }
     }
-    show({ screen: 'game_over', rewarded: plan === 'results_with_rewarded' });
+    show({
+      screen: 'game_over',
+      rewarded: plan === 'results_with_rewarded',
+      doubleScore: doubleReady()
+    });
   }
 
   function startNextRound() {
@@ -243,6 +312,8 @@ function start() {
   function resetRunCounters() {
     continueUses = 0;
     hintsUsed = 0;
+    rerollsUsed = 0;
+    doublesUsed = 0;
     playMs = 0;
     sawStuck = false;
   }
@@ -259,8 +330,20 @@ function start() {
     });
   }
 
+  function rerollReady() {
+    if (screen() !== 'play' || consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('reroll')) return false;
+    return canOfferReroll({
+      stuck: isStuck(match.state.board, match.state.pieces),
+      rerollsUsed,
+      rewardedAllowed: ads.canOfferRewarded('reroll')
+    });
+  }
+
   function restart() {
     levelIndex = 0;
+    mode = 'arcade';
     resetRunCounters();
     rewardKind = null;
     match = makeMatch();
@@ -288,6 +371,24 @@ function start() {
       match.showHint();
       overlay = null;
       tap();
+    } else if (rewardKind === 'reroll') {
+      rerollsUsed = 1;
+      const outcome = match.reroll();
+      overlay = null;
+      audio.play('sfx.clear');
+      if (outcome.gameOver) finishGame();
+    } else if (rewardKind === 'double_score') {
+      doublesUsed = 1;
+      match.doubleScore();
+      audio.play('sfx.win');
+      if (match.state.phase === 'round_complete') show({ screen: 'round_complete', doubleScore: false });
+      else {
+        show({
+          screen: 'game_over',
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          doubleScore: false
+        });
+      }
     } else {
       continueUses += 1;
       const outcome = match.continueRun(rowsForContinue(tuning.continueClears));
@@ -304,12 +405,13 @@ function start() {
     if (match.state.phase === 'game_over') {
       show({
         screen: 'game_over',
-        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+        doubleScore: doubleReady()
       });
       return;
     }
     if (match.state.phase === 'round_complete') {
-      show({ screen: 'round_complete' });
+      show({ screen: 'round_complete', doubleScore: doubleReady() });
       return;
     }
     overlay = null;
@@ -377,8 +479,35 @@ function start() {
       resumeRun();
       return;
     }
+    if (id === 'motion') {
+      reducedMotion = !reducedMotion;
+      feedback.setReducedMotion(reducedMotion);
+      tap();
+      persist();
+      return;
+    }
+    if (id === 'haptics') {
+      hapticsOn = !hapticsOn;
+      tap();
+      persist();
+      return;
+    }
+    if (id === 'daily') {
+      mode = 'daily';
+      levelIndex = 0;
+      resetRunCounters();
+      rewardKind = null;
+      match = makeMatch();
+      pointer = createPointerState();
+      overlay = null;
+      armIgnore();
+      tap();
+      persist();
+      return;
+    }
     if (id === 'new_game') {
       levelIndex = 0;
+      mode = 'arcade';
       resetRunCounters();
       rewardKind = null;
       match = makeMatch();
@@ -401,13 +530,13 @@ function start() {
       if (after === 'next_round') startNextRound();
       else {
         tap();
-        show({ screen: 'game_over', rewarded: false });
+        show({ screen: 'game_over', rewarded: false, doubleScore: doubleReady() });
       }
       return;
     }
     if (id === 'next_round') {
       const advance = planRoundAdvance({
-        interstitialAllowed: ads.canShowInterstitial('between_rounds')
+        interstitialAllowed: interstitialAllowed('between_rounds')
       });
       if (advance === 'ad_then_next') {
         const result = ads.showInterstitial({ breakType: 'between_rounds' });
@@ -422,10 +551,18 @@ function start() {
       restart();
       return;
     }
-    if (id === 'offer_continue' || id === 'offer_hint') {
-      const kind = id === 'offer_hint' ? 'hint' : 'continue';
+    if (id === 'offer_continue' || id === 'offer_hint' || id === 'offer_reroll' || id === 'offer_double') {
+      const kind = id === 'offer_hint'
+        ? 'hint'
+        : id === 'offer_reroll'
+          ? 'reroll'
+          : id === 'offer_double'
+            ? 'double_score'
+            : 'continue';
       if (kind === 'hint' && !hintReady()) return;
+      if (kind === 'reroll' && !rerollReady()) return;
       if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'))) return;
+      if (kind === 'double_score' && !canOfferDouble({ doublesUsed, rewardedAllowed: ads.canOfferRewarded('double_score') })) return;
       if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
@@ -436,17 +573,21 @@ function start() {
     if (id === 'decline') {
       tracker.track('rewarded_declined', { kind: rewardKind || 'continue' });
       tap();
-      const backToResults = match.state.phase === 'game_over';
       rewardKind = null;
-      if (backToResults) {
+      if (match.state.phase === 'round_complete') {
+        show({ screen: 'round_complete', doubleScore: doubleReady() });
+        return;
+      }
+      if (match.state.phase === 'game_over') {
         show({
           screen: 'game_over',
-          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true),
+          doubleScore: doubleReady()
         });
-      } else {
-        overlay = null;
-        armIgnore();
+        return;
       }
+      overlay = null;
+      armIgnore();
       return;
     }
     if (id === 'watch') {
@@ -468,6 +609,7 @@ function start() {
     const view = viewModel({
       screen: name,
       rewarded: Boolean(overlay?.rewarded),
+      doubleScore: Boolean(overlay?.doubleScore),
       kind: overlay?.kind || rewardKind,
       step: overlay?.step || 0,
       score: state.score,
@@ -594,7 +736,9 @@ function start() {
           popupX: (reduced.effect.x + 0.5) * layout.cell,
           popupY: (reduced.effect.y + 0.5) * layout.cell
         });
-        playSounds(burst.sounds);
+        playSounds(burst.sounds, burst.pitch);
+        vibrateFor(result.lines);
+        maybeEarnFreeze();
         tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
         if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
       }
@@ -685,12 +829,19 @@ function start() {
       round: level().name,
       clears: state.roundClears,
       target: state.targetClears,
-      goal: 'Fill a row or column',
+      goal: mode === 'daily'
+        ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}`
+        : 'Fill a row or column',
       meter: Math.max(0, Math.min(1, state.streak / meterMax)),
       meterMax,
       celebrate: celebrationLevel(state.streak, steps),
       hintNote: state.hint?.label || '',
       hint: hintMode(),
+      reroll: rerollReady() ? 'ready' : 'off',
+      dailyLabel: mode === 'daily' ? `Daily ${daily.streak || 0}` : 'Daily',
+      dailyOn: mode === 'daily',
+      reducedMotion,
+      haptics: hapticsOn,
       install: install.available && screen() === 'play',
       muted: audio.muted
     });

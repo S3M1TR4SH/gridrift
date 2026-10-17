@@ -17,6 +17,13 @@ function readJson(relative) {
 test('shipped game config stays inside the guardrails', () => {
   const result = validateGameConfig({ pacing, tuning });
   assert.equal(result.ok, true, JSON.stringify(result.violations, null, 2));
+  assert.deepEqual(pacing.ads.interstitial.intervalArms, [90, 120, 180]);
+  assert.equal(pacing.ads.interstitial.minSecondsBetween, 120);
+  assert.equal(pacing.ads.rewarded.optInOnly, true);
+  assert.deepEqual(pacing.ads.rewarded.placements, ['continue', 'hint', 'reroll', 'double_score']);
+  for (const key of ['flashMs', 'particleLifeMs', 'popupMs', 'shakeMs', 'invalidShakeMs', 'snapBackMs']) {
+    assert.ok(tuning.juice[key] < 400, key);
+  }
   for (const folder of ['config', 'levels', 'branding']) {
     for (const name of readdirSync(join(root, folder))) {
       if (!name.endsWith('.json')) continue;

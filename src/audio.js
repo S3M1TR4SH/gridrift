@@ -19,7 +19,7 @@ export function createAudio(registry) {
   let context = null;
   let muted = false;
 
-  function tone(kind) {
+  function tone(kind, rate = 1) {
     if (muted || typeof AudioContext === 'undefined') return;
     if (!context) context = new AudioContext();
     if (context.state === 'suspended') context.resume();
@@ -27,7 +27,8 @@ export function createAudio(registry) {
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.type = spec.type;
-    oscillator.frequency.value = spec.freq;
+    const pitch = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    oscillator.frequency.value = spec.freq * pitch;
     gain.gain.value = spec.gain;
     oscillator.connect(gain);
     gain.connect(context.destination);
@@ -39,10 +40,10 @@ export function createAudio(registry) {
   }
 
   return {
-    play(id) {
+    play(id, rate = 1) {
       const asset = registry.get(id);
       if (!asset || asset.kind !== 'sfx') return;
-      tone(asset.synth);
+      tone(asset.synth, rate);
     },
     toggleMute() {
       muted = !muted;

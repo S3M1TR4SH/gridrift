@@ -130,6 +130,9 @@ button.quiet {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--line);
+  min-width: 0;
+  padding: 0 10px;
+  font-size: 0.95rem;
 }
 
 main {

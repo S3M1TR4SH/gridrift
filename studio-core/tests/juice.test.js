@@ -96,6 +96,55 @@ test('an invalid drop requests the invalid sound and a snap', () => {
   assert.ok(sample.snap.y > 10);
 });
 
+test('effects scale with clear size and end before 400ms', () => {
+  const feedback = createFeedback({
+    config: {
+      particleCount: 4,
+      particleLifeMs: 900,
+      popupMs: 900,
+      flashMs: 900,
+      shakeMs: 900,
+      shakePx: 4
+    },
+    now: () => 0,
+    random: () => 0.2
+  });
+  const small = feedback.clear({ rows: [0], cols: [], points: 10, cell: 8, grid: 6, streak: 1 });
+  const big = feedback.clear({ rows: [0, 1], cols: [2], points: 40, cell: 8, grid: 6, streak: 1 });
+  assert.ok(big.pitch > small.pitch);
+  assert.ok(big.intensity > small.intensity);
+  assert.ok(feedback.config.particleLifeMs < 400);
+  assert.ok(feedback.config.popupMs < 400);
+  assert.ok(feedback.config.flashMs < 400);
+  assert.ok(feedback.config.shakeMs < 400);
+  const late = feedback.sample(400);
+  assert.equal(late.particles.length, 0);
+  assert.equal(late.popups.length, 0);
+  assert.equal(late.flashes.length, 0);
+  assert.equal(late.shakeX, 0);
+  assert.equal(late.shakeY, 0);
+});
+
+test('reduced motion drops shake and particles', () => {
+  const feedback = createFeedback({
+    config: { particleCount: 6, shakePx: 8, flashMs: 40, popupMs: 40, particleLifeMs: 40, shakeMs: 40 },
+    reducedMotion: true,
+    now: () => 0,
+    random: () => 0.4
+  });
+  const burst = feedback.clear({ rows: [0, 1], cols: [1], points: 20, cell: 8, grid: 6, streak: 4 });
+  assert.equal(burst.intensity > 1, true);
+  const sample = feedback.sample(10);
+  assert.equal(sample.particles.length, 0);
+  assert.equal(sample.shakeX, 0);
+  assert.equal(sample.shakeY, 0);
+  feedback.setReducedMotion(false);
+  feedback.clear({ rows: [0, 1], cols: [], points: 20, cell: 8, grid: 6 });
+  const moving = feedback.sample(10);
+  assert.ok(moving.particles.length > 0);
+  assert.ok(Math.abs(moving.shakeX) + Math.abs(moving.shakeY) > 0);
+});
+
 test('juice values clamp and reject remote sound ids', () => {
   const juice = resolveJuice({
     particleCount: 500,

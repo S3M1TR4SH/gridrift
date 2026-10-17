@@ -1,7 +1,32 @@
 const SAVE_KEY = 'gridrift.run.v1';
 
+function emptySettings() {
+  return { reducedMotion: null, haptics: null };
+}
+
+function emptyDaily() {
+  return { lastCompleted: '', streak: 0, freezes: 0, marks: 0 };
+}
+
 function emptySave() {
-  return { bestScore: 0, tutorialSeen: false, run: null };
+  return {
+    bestScore: 0,
+    tutorialSeen: false,
+    sessions: 0,
+    installDay: '',
+    settings: emptySettings(),
+    daily: emptyDaily(),
+    run: null
+  };
+}
+
+function day(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+}
+
+function choice(value) {
+  if (value === true || value === false) return value;
+  return null;
 }
 
 function whole(value) {
@@ -51,17 +76,34 @@ function sanitizeRun(run) {
     levelIndex: whole(run.levelIndex),
     continueUses: whole(run.continueUses),
     hintsUsed: whole(run.hintsUsed) > 0 ? 1 : 0,
+    rerollsUsed: whole(run.rerollsUsed) > 0 ? 1 : 0,
+    doublesUsed: whole(run.doublesUsed) > 0 ? 1 : 0,
     playMs: playDuration(run.playMs),
     sawStuck: run.sawStuck === true,
+    mode: run.mode === 'daily' ? 'daily' : 'arcade',
     phase
   };
 }
 
 export function sanitizeSave(data) {
   if (!data || typeof data !== 'object') return emptySave();
+  const settings = data.settings && typeof data.settings === 'object' ? data.settings : {};
+  const daily = data.daily && typeof data.daily === 'object' ? data.daily : {};
   return {
     bestScore: whole(data.bestScore),
     tutorialSeen: data.tutorialSeen === true,
+    sessions: whole(data.sessions),
+    installDay: day(data.installDay),
+    settings: {
+      reducedMotion: choice(settings.reducedMotion),
+      haptics: choice(settings.haptics)
+    },
+    daily: {
+      lastCompleted: day(daily.lastCompleted),
+      streak: whole(daily.streak),
+      freezes: Math.min(3, whole(daily.freezes)),
+      marks: whole(daily.marks)
+    },
     run: sanitizeRun(data.run)
   };
 }

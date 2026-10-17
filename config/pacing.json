@@ -5,6 +5,7 @@
       "enabled": true,
       "breaks": ["between_rounds", "game_over"],
       "minSecondsBetween": 120,
+      "intervalArms": [90, 120, 180],
       "minRoundsBetween": 2,
       "maxPerSession": 2,
       "nearControls": false,
@@ -13,8 +14,8 @@
     "rewarded": {
       "enabled": true,
       "optInOnly": true,
-      "placements": ["continue", "hint"],
-      "maxPerSession": 2,
+      "placements": ["continue", "hint", "reroll", "double_score"],
+      "maxPerSession": 3,
       "minSecondsBetween": 90
     }
   },

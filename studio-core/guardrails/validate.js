@@ -78,7 +78,8 @@ function validateInterstitial(interstitial, violations) {
     'minRoundsBetween',
     'maxPerSession',
     'nearControls',
-    'controlSeparationPx'
+    'controlSeparationPx',
+    'intervalArms'
   ]);
   for (const key of Object.keys(interstitial)) {
     if (!allowed.has(key)) {
@@ -111,6 +112,31 @@ function validateInterstitial(interstitial, violations) {
         `minSecondsBetween cannot be under ${LIMITS.ads.minSecondsBetween}`,
         interstitial.minSecondsBetween
       ));
+    }
+  }
+  if (interstitial.intervalArms != null) {
+    if (!Array.isArray(interstitial.intervalArms) || interstitial.intervalArms.length === 0) {
+      violations.push(violation('ads.minSecondsBetween', 'intervalArms must list the A/B intervals', interstitial.intervalArms));
+    } else {
+      for (const arm of interstitial.intervalArms) {
+        if (typeof arm !== 'number' || arm < LIMITS.ads.minSecondsBetween) {
+          violations.push(violation(
+            'ads.minSecondsBetween',
+            `interval arm cannot be under ${LIMITS.ads.minSecondsBetween}`,
+            arm
+          ));
+        }
+      }
+      if (
+        typeof interstitial.minSecondsBetween === 'number'
+        && !interstitial.intervalArms.includes(interstitial.minSecondsBetween)
+      ) {
+        violations.push(violation(
+          'ads.minSecondsBetween',
+          'minSecondsBetween must be one of intervalArms',
+          interstitial.minSecondsBetween
+        ));
+      }
     }
   }
   if (expectNumber(violations, interstitial.minRoundsBetween, 'ads.minRoundsBetween', 'minRoundsBetween is required')) {
@@ -348,15 +374,15 @@ function validateJuice(juice, violations) {
     return;
   }
   const ranges = {
-    flashMs: [0, 2000],
+    flashMs: [0, 399],
     particleCount: [0, 40],
-    particleLifeMs: [0, 4000],
-    popupMs: [0, 4000],
-    shakeMs: [0, 2000],
+    particleLifeMs: [0, 399],
+    popupMs: [0, 399],
+    shakeMs: [0, 399],
     shakePx: [0, 16],
-    invalidShakeMs: [0, 2000],
+    invalidShakeMs: [0, 399],
     invalidShakePx: [0, 16],
-    snapBackMs: [0, 2000],
+    snapBackMs: [0, 399],
     dragLiftPx: [0, 160]
   };
   const allowed = new Set([...Object.keys(ranges), 'streakSteps', 'sounds', 'particleIds', 'flashId']);
