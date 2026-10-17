@@ -1,5 +1,5 @@
 {
-  "grid": 10,
+  "grid": 6,
   "traySize": 3,
   "continueClears": 3,
   "levelOrder": ["round-01", "round-02", "round-03", "endless"],
@@ -9,5 +9,37 @@
     "comboBonusPerExtraLine": 5,
     "streakMultiplierStep": 0.5,
     "maxStreakMultiplier": 4
+  },
+  "juice": {
+    "flashMs": 180,
+    "particleCount": 12,
+    "particleLifeMs": 360,
+    "popupMs": 320,
+    "shakeMs": 240,
+    "shakePx": 5,
+    "invalidShakeMs": 200,
+    "invalidShakePx": 7,
+    "snapBackMs": 180,
+    "dragLiftPx": 76,
+    "streakSteps": [2, 4, 6],
+    "sounds": {
+      "clear": "sfx.clear",
+      "combo": "sfx.combo",
+      "invalid": "sfx.invalid",
+      "streak": ["sfx.streak.1", "sfx.streak.2", "sfx.streak.3"],
+      "tap": "sfx.ui.tap",
+      "tutorial": "sfx.tutorial.step"
+    },
+    "particleIds": [
+      "fx.particle.1",
+      "fx.particle.2",
+      "fx.particle.3",
+      "fx.particle.4",
+      "fx.particle.5",
+      "fx.particle.6",
+      "fx.particle.7",
+      "fx.particle.8"
+    ],
+    "flashId": "fx.flash"
   }
 }

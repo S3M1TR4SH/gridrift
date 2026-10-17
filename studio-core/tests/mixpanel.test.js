@@ -134,6 +134,37 @@ test('players under 13 never load the sdk, even if analytics is forced on', asyn
   assert.equal(session.client.calls.length, 0);
 });
 
+test('retention events stay behind consent and map days since install', async () => {
+  const blocked = harness({ isChild: false, analyticsAllowed: false });
+  assert.equal(blocked.tracker.track('first_open', { game: 'gridrift' }).reason, 'no_consent');
+  assert.equal(blocked.tracker.track('session_start', { game: 'gridrift', days_since_install: 1 }).reason, 'no_consent');
+  assert.equal(blocked.tracker.track('daily_complete', { streak: 1, freezes: 0 }).reason, 'no_consent');
+  assert.equal(blocked.loads(), 0);
+  assert.equal(blocked.client.calls.length, 0);
+
+  const child = harness({ isChild: true, analyticsAllowed: true });
+  assert.deepEqual(await child.tracker.sync(), { ok: true, reason: 'child' });
+  assert.equal(child.tracker.track('first_open', { game: 'gridrift' }).reason, 'no_consent');
+  assert.equal(child.tracker.track('session_start', { days_since_install: 7 }).reason, 'no_consent');
+  assert.equal(child.tracker.track('daily_complete', { streak: 2, freezes: 1 }).reason, 'no_consent');
+  assert.equal(child.loads(), 0);
+
+  const session = harness({ isChild: false, analyticsAllowed: true });
+  const starting = session.tracker.sync();
+  assert.equal(session.tracker.track('first_open', { game: 'gridrift' }).ok, true);
+  assert.equal(session.tracker.track('session_start', { game: 'gridrift', days_since_install: 7 }).ok, true);
+  assert.equal(session.tracker.track('daily_complete', { streak: 3, freezes: 1 }).ok, true);
+  assert.equal(session.client.calls.some((call) => call.method === 'track'), false);
+  session.release();
+  assert.deepEqual(await starting, { ok: true, reason: 'started' });
+  const tracked = session.client.calls.filter((call) => call.method === 'track');
+  assert.deepEqual(tracked.map((call) => call.name), ['first_open', 'session_start', 'daily_complete']);
+  assert.equal(tracked[1].props.days_since_install, 7);
+  assert.equal(tracked[2].props.streak, 3);
+  assert.equal(session.client.calls.some((call) => call.method === 'identify' || call.method === 'people.set'), false);
+  assert.equal(session.loads(), 1);
+});
+
 test('consented events map onto the standard schema without identity or capture', async () => {
   const session = harness({ isChild: false, analyticsAllowed: true });
   const starting = session.tracker.sync();

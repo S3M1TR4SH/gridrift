@@ -78,7 +78,8 @@ function validateInterstitial(interstitial, violations) {
     'minRoundsBetween',
     'maxPerSession',
     'nearControls',
-    'controlSeparationPx'
+    'controlSeparationPx',
+    'intervalArms'
   ]);
   for (const key of Object.keys(interstitial)) {
     if (!allowed.has(key)) {
@@ -111,6 +112,31 @@ function validateInterstitial(interstitial, violations) {
         `minSecondsBetween cannot be under ${LIMITS.ads.minSecondsBetween}`,
         interstitial.minSecondsBetween
       ));
+    }
+  }
+  if (interstitial.intervalArms != null) {
+    if (!Array.isArray(interstitial.intervalArms) || interstitial.intervalArms.length === 0) {
+      violations.push(violation('ads.minSecondsBetween', 'intervalArms must list the A/B intervals', interstitial.intervalArms));
+    } else {
+      for (const arm of interstitial.intervalArms) {
+        if (typeof arm !== 'number' || arm < LIMITS.ads.minSecondsBetween) {
+          violations.push(violation(
+            'ads.minSecondsBetween',
+            `interval arm cannot be under ${LIMITS.ads.minSecondsBetween}`,
+            arm
+          ));
+        }
+      }
+      if (
+        typeof interstitial.minSecondsBetween === 'number'
+        && !interstitial.intervalArms.includes(interstitial.minSecondsBetween)
+      ) {
+        violations.push(violation(
+          'ads.minSecondsBetween',
+          'minSecondsBetween must be one of intervalArms',
+          interstitial.minSecondsBetween
+        ));
+      }
     }
   }
   if (expectNumber(violations, interstitial.minRoundsBetween, 'ads.minRoundsBetween', 'minRoundsBetween is required')) {
@@ -302,7 +328,7 @@ export function validateTuning(tuning) {
     return { ok: false, violations: [violation('tuning.required', 'tuning config is required', tuning)] };
   }
   violations.push(...findUnsafeLiterals(tuning, '$.tuning'));
-  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score']);
+  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score', 'juice']);
   for (const key of Object.keys(tuning)) {
     if (!allowed.has(key)) violations.push(violation('tuning.unexpected', `unexpected tuning field ${key}`, key));
   }
@@ -337,7 +363,76 @@ export function validateTuning(tuning) {
       }
     }
   }
+  validateJuice(tuning.juice, violations);
   return { ok: violations.length === 0, violations };
+}
+
+function validateJuice(juice, violations) {
+  if (juice == null) return;
+  if (!isPlainObject(juice)) {
+    violations.push(violation('tuning.juice', 'juice config must be an object', juice));
+    return;
+  }
+  const ranges = {
+    flashMs: [0, 399],
+    particleCount: [0, 40],
+    particleLifeMs: [0, 399],
+    popupMs: [0, 399],
+    shakeMs: [0, 399],
+    shakePx: [0, 16],
+    invalidShakeMs: [0, 399],
+    invalidShakePx: [0, 16],
+    snapBackMs: [0, 399],
+    dragLiftPx: [0, 160]
+  };
+  const allowed = new Set([...Object.keys(ranges), 'streakSteps', 'sounds', 'particleIds', 'flashId']);
+  for (const key of Object.keys(juice)) {
+    if (!allowed.has(key)) violations.push(violation('tuning.juice', `unexpected juice field ${key}`, key));
+  }
+  for (const [key, [min, max]] of Object.entries(ranges)) {
+    if (juice[key] == null) continue;
+    if (typeof juice[key] !== 'number' || juice[key] < min || juice[key] > max) {
+      violations.push(violation('tuning.juice', `juice.${key} must be from ${min} to ${max}`, juice[key]));
+    }
+  }
+  if (juice.streakSteps != null) {
+    const steps = juice.streakSteps;
+    if (!Array.isArray(steps) || steps.length < 1 || steps.length > 8 || steps.some((step) => typeof step !== 'number' || step < 1)) {
+      violations.push(violation('tuning.juice', 'streakSteps must be 1 to 8 numbers of at least 1', steps));
+    }
+  }
+  if (juice.flashId != null && (typeof juice.flashId !== 'string' || /^https?:/i.test(juice.flashId))) {
+    violations.push(violation('tuning.juice', 'flashId must be an asset id', juice.flashId));
+  }
+  if (juice.particleIds != null) {
+    const ids = juice.particleIds;
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 8 || ids.some((id) => typeof id !== 'string' || /^https?:/i.test(id))) {
+      violations.push(violation('tuning.juice', 'particleIds must be 1 to 8 asset ids', ids));
+    }
+  }
+  if (juice.sounds != null) {
+    if (!isPlainObject(juice.sounds)) {
+      violations.push(violation('tuning.juice', 'juice.sounds must be an object', juice.sounds));
+    } else {
+      const soundKeys = new Set(['clear', 'combo', 'invalid', 'streak', 'tap', 'tutorial']);
+      for (const key of Object.keys(juice.sounds)) {
+        if (!soundKeys.has(key)) violations.push(violation('tuning.juice', `unexpected juice sound ${key}`, key));
+      }
+      for (const key of ['clear', 'combo', 'invalid', 'tap', 'tutorial']) {
+        const id = juice.sounds[key];
+        if (id != null && (typeof id !== 'string' || /^https?:/i.test(id))) {
+          violations.push(violation('tuning.juice', `juice.sounds.${key} must be an asset id`, id));
+        }
+      }
+      const streak = juice.sounds.streak;
+      if (streak != null) {
+        const ids = Array.isArray(streak) ? streak : [streak];
+        if (!ids.length || ids.length > 3 || ids.some((id) => typeof id !== 'string' || /^https?:/i.test(id))) {
+          violations.push(violation('tuning.juice', 'juice.sounds.streak must be 1 to 3 asset ids', streak));
+        }
+      }
+    }
+  }
 }
 
 export function validatePacing(pacing) {

@@ -21,4 +21,7 @@ test('the public mixpanel token lives in config and not in source', () => {
   }
   assert.match(main, /createMixpanelAdapter\(\{ token: analyticsConfig\.token \}\)/);
   assert.match(main, /analytics\.json/);
+  assert.match(main, /tracker\.track\('first_open'/);
+  assert.match(main, /tracker\.track\('session_start', \{ game: 'gridrift', days_since_install: days \}\)/);
+  assert.match(main, /tracker\.track\('daily_complete'/);
 });

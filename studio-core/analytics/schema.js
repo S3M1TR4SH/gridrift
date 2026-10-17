@@ -1,6 +1,7 @@
 export const ANALYTICS_SCHEMA_VERSION = 1;
 
 export const EVENT_NAMES = Object.freeze([
+  'first_open',
   'session_start',
   'consent_updated',
   'round_start',
@@ -8,6 +9,7 @@ export const EVENT_NAMES = Object.freeze([
   'lines_cleared',
   'combo',
   'round_complete',
+  'daily_complete',
   'game_over',
   'restart',
   'ad_break_shown',

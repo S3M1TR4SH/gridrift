@@ -89,6 +89,14 @@ test('raising only the session cap is enough to fail', () => {
   assert.ok(result.violations.some((item) => item.rule === 'ads.maxPerSession'));
 });
 
+test('juice tuning is optional and out of range fails', () => {
+  assert.equal(validateGameConfig({ pacing: validPacing, tuning: validTuning }).ok, true);
+  const tuning = { ...validTuning, juice: { particleCount: 99, shakePx: 40 } };
+  const result = validateGameConfig({ pacing: validPacing, tuning });
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((item) => item.rule === 'tuning.juice'));
+});
+
 test('continue cannot clear more rows than the guardrail', () => {
   const tuning = { ...validTuning, continueClears: LIMITS.rewardedEffects.maxContinueRowsCleared + 5 };
   const result = validateGameConfig({ pacing: validPacing, tuning });
