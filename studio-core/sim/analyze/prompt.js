@@ -8,7 +8,7 @@ export function buildPrompt({ summary, pacing, tuning }) {
     `Hard caps: interstitial maxPerSession ${LIMITS.ads.maxPerSession}, minSecondsBetween ${LIMITS.ads.minSecondsBetween}, minRoundsBetween ${LIMITS.ads.minRoundsBetween}.`,
     `Rewarded maxPerSession ${LIMITS.ads.rewarded.maxPerSession}, rewarded minSecondsBetween ${LIMITS.ads.rewarded.minSecondsBetween}.`,
     `difficulty maxTier ${LIMITS.difficulty.maxTier}. failBias must stay 0. continueClears at most ${LIMITS.rewardedEffects.maxContinueRowsCleared}.`,
-    'No personalized ads, no network endpoints, and no ads or analytics for children.',
+    'No personalized ads and no network endpoints. Children may see non-personalized ads only, with no analytics and no device or advertising ids.',
     'Summary:',
     JSON.stringify(summary),
     'Current pacing:',

@@ -84,14 +84,35 @@ export function listMoves(board, pieces, { lookahead = 2 } = {}) {
   return moves;
 }
 
-function currentAd(view, rewardKind, breakAfter) {
-  if (view.screen === 'ad_break') {
+export function boardNearMiss(board) {
+  if (!board?.length) return false;
+  const size = board.length;
+  for (let index = 0; index < size; index += 1) {
+    if (board[index].filter((cell) => !cell).length === 1) return true;
+    let empty = 0;
+    for (let y = 0; y < size; y += 1) if (!board[y][index]) empty += 1;
+    if (empty === 1) return true;
+  }
+  return false;
+}
+
+const OFFER_PLACEMENT = {
+  offer_continue: 'continue',
+  offer_hint: 'hint',
+  offer_reroll: 'reroll',
+  offer_double: 'double_score'
+};
+
+export function describeAd(view, rewardKind, breakAfter) {
+  if (view?.screen === 'ad_break') {
     return { kind: 'interstitial', screen: 'ad_break', placement: breakAfter || 'interstitial' };
   }
-  if (view.screen === 'rewarded_confirm' || view.screen === 'rewarded_play') {
+  if (view?.screen === 'rewarded_confirm' || view?.screen === 'rewarded_play') {
     return { kind: 'rewarded', screen: view.screen, placement: rewardKind || 'rewarded' };
   }
-  return null;
+  const offer = (view?.actions || []).find((action) => OFFER_PLACEMENT[action.id]);
+  if (!offer) return null;
+  return { kind: 'rewarded', screen: view.screen || '', placement: OFFER_PLACEMENT[offer.id] };
 }
 
 export function detectGameOver(phase, screen) {
@@ -108,12 +129,18 @@ export function attachSimBridge(api) {
     const view = api.getView();
     const playing = view.screen === 'play';
     const actions = [];
+    if (view.screen === 'age_gate') {
+      actions.push(
+        { type: 'ui', id: 'age_13', uiId: 'age_13', label: 'Year' },
+        { type: 'ui', id: 'age_under', uiId: 'age_under', label: 'Year' }
+      );
+    }
     if (playing) {
       actions.push(...listMoves(match.board, match.pieces));
       if (api.canHint()) {
         actions.push({ type: 'ui', id: 'offer_hint', uiId: 'offer_hint', label: 'Hint' });
       }
-    } else {
+    } else if (view.screen !== 'age_gate') {
       for (const action of view.actions) {
         actions.push({ type: 'ui', id: action.id, uiId: action.id, label: action.label });
       }
@@ -128,9 +155,12 @@ export function attachSimBridge(api) {
       failed: match.phase === 'game_over' || view.screen === 'game_over',
       gameOver: detectGameOver(match.phase, view.screen),
       ended: false,
-      ad: currentAd(view, api.getRewardKind(), api.getBreak()),
+      nearMiss: boardNearMiss(match.board),
+      ad: describeAd({ ...view, actions }, api.getRewardKind(), api.getBreak()),
       actions,
-      round: api.getRound()
+      round: api.getRound(),
+      roundNumber: Number(api.getRoundNumber?.() ?? 0) || null,
+      playMs: Number(api.getPlayMs?.() ?? 0) || 0
     };
   }
 
@@ -152,6 +182,9 @@ export function attachSimBridge(api) {
       const match = api.getMatch();
       const view = api.getView();
       return detectGameOver(match.phase, view.screen);
+    },
+    advancePlay(ms) {
+      return api.advancePlay?.(ms) ?? 0;
     }
   };
   window.__playerSim = bridge;

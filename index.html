@@ -18,6 +18,8 @@
       <p id="goal" class="goal">Clear 4 lines</p>
       <div class="stats">
         <span>Score <b id="score">0</b></span>
+        <span class="next-goal">Next <b id="next-goal">40</b></span>
+        <span id="low-space" class="low-space" hidden>Low space</span>
         <span>Best <b id="best">0</b></span>
         <span>Streak <b id="streak">0</b></span>
         <span id="round">Round</span>
@@ -45,6 +47,7 @@
     </header>
     <main>
       <canvas id="board" width="320" height="480" aria-label="Gridrift board"></canvas>
+      <p id="round-notice" class="round-notice" hidden>Round cleared</p>
     </main>
   </div>
   <div id="overlay" hidden></div>

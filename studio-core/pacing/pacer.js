@@ -105,9 +105,16 @@ export function createPacer({
     return Boolean(isChild());
   }
 
+  function childAdsBlocked() {
+    if (!child()) return false;
+    if (pacing?.privacy?.childrenAdsAllowed !== true) return true;
+    if (pacing?.privacy?.personalizedAds === true || pacing?.ads?.personalized === true) return true;
+    return false;
+  }
+
   function interstitialBlock(breakType) {
-    if (child()) return 'child';
-    if (!interstitial.enabled || pacing?.privacy?.childrenAdsAllowed) return 'disabled';
+    if (childAdsBlocked()) return 'child';
+    if (!interstitial.enabled) return 'disabled';
     if (session < 2) return 'first_session';
     if (!breaks.includes(breakType)) return 'break';
     if (interstitialsShown >= interstitialMax) return 'cap';
@@ -157,7 +164,7 @@ export function createPacer({
       return true;
     },
     canOfferRewarded(placement) {
-      if (child()) return false;
+      if (childAdsBlocked()) return false;
       if (!rewarded.enabled || rewarded.optInOnly === false) return false;
       if (pacing?.ads?.personalized) return false;
       if (!LIMITS.ads.rewarded.placements.includes(placement)) return false;

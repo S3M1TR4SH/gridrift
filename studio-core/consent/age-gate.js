@@ -3,6 +3,24 @@ import { LIMITS } from '../guardrails/limits.js';
 export const COPPA_AGE = LIMITS.privacy.coppaAge;
 export const CONSENT_STORAGE_KEY = 'studio-core.consent.v1';
 
+export function ageFromBirthYear(year, now = new Date()) {
+  const born = Math.floor(Number(year));
+  const current = now.getFullYear();
+  if (!Number.isInteger(born) || born < 1900 || born > current) return null;
+  return current - born;
+}
+
+export function consentFromBirthYear(year, now = new Date()) {
+  const age = ageFromBirthYear(year, now);
+  if (age == null) throw new Error('Birth year is required');
+  const state = evaluateAgeGate({ band: age < COPPA_AGE ? 'under13' : '13plus' });
+  return { ...state, birthYear: Math.floor(Number(year)) };
+}
+
+export function canNotify(state) {
+  return Boolean(state) && !state.isChild && state.notificationsAllowed === true;
+}
+
 export function evaluateAgeGate(answer) {
   if (!answer || (answer.band !== 'under13' && answer.band !== '13plus')) {
     throw new Error('Age gate answer is required');
@@ -11,8 +29,11 @@ export function evaluateAgeGate(answer) {
     return {
       isChild: true,
       analyticsAllowed: false,
-      adsAllowed: false,
+      adsAllowed: true,
+      notificationsAllowed: false,
       personalizedAds: false,
+      nonPersonalizedAds: true,
+      childDirected: true,
       needsAnalyticsPrompt: false,
       coppaAge: COPPA_AGE
     };
@@ -21,7 +42,10 @@ export function evaluateAgeGate(answer) {
     isChild: false,
     analyticsAllowed: false,
     adsAllowed: true,
+    notificationsAllowed: true,
     personalizedAds: false,
+    nonPersonalizedAds: false,
+    childDirected: false,
     needsAnalyticsPrompt: true,
     coppaAge: COPPA_AGE
   };
@@ -33,8 +57,11 @@ export function applyAnalyticsChoice(state, choice) {
     return {
       ...state,
       analyticsAllowed: false,
-      adsAllowed: false,
+      adsAllowed: true,
+      notificationsAllowed: false,
       personalizedAds: false,
+      nonPersonalizedAds: true,
+      childDirected: true,
       needsAnalyticsPrompt: false
     };
   }
@@ -45,7 +72,10 @@ export function applyAnalyticsChoice(state, choice) {
     ...state,
     analyticsAllowed: choice === 'granted',
     adsAllowed: true,
+    notificationsAllowed: state.notificationsAllowed !== false,
     personalizedAds: false,
+    nonPersonalizedAds: false,
+    childDirected: false,
     needsAnalyticsPrompt: false
   };
 }
@@ -53,11 +83,17 @@ export function applyAnalyticsChoice(state, choice) {
 function lock(state) {
   if (!state || typeof state !== 'object') return null;
   const isChild = Boolean(state.isChild);
+  const year = Math.floor(Number(state.birthYear));
+  const birthYear = Number.isInteger(year) && year >= 1900 && year <= 3000 ? year : null;
   return {
     isChild,
+    birthYear,
     analyticsAllowed: isChild ? false : Boolean(state.analyticsAllowed),
-    adsAllowed: isChild ? false : state.adsAllowed !== false,
+    adsAllowed: isChild ? true : state.adsAllowed !== false,
+    notificationsAllowed: isChild ? false : state.notificationsAllowed !== false,
     personalizedAds: false,
+    nonPersonalizedAds: isChild,
+    childDirected: isChild,
     needsAnalyticsPrompt: isChild ? false : Boolean(state.needsAnalyticsPrompt),
     coppaAge: COPPA_AGE
   };

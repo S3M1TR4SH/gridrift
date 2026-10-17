@@ -58,6 +58,20 @@ test('children, opted-out rewarded, and fail bias cannot be overridden', () => {
   assert.equal(child.failBias, 0);
   assert.equal(child.forceUnplaceable, false);
 
+  const allowed = structuredClone(validPacing);
+  allowed.privacy.childrenAdsAllowed = true;
+  allowed.privacy.personalizedAds = false;
+  allowed.ads.personalized = false;
+  const childAds = createPacer({ pacing: allowed, now: () => 10_000, isChild: () => true });
+  childAds.recordRoundEnded();
+  assert.equal(childAds.canShowInterstitial('game_over'), true);
+  assert.equal(childAds.canOfferRewarded('continue'), true);
+  allowed.ads.personalized = true;
+  const blocked = createPacer({ pacing: allowed, now: () => 10_000, isChild: () => true });
+  blocked.recordRoundEnded();
+  assert.equal(blocked.canShowInterstitial('game_over'), false);
+  assert.equal(blocked.canOfferRewarded('continue'), false);
+
   const adult = createPacer({ pacing: validPacing, now: () => 10_000, isChild: () => false });
   assert.equal(adult.canOfferRewarded('continue'), true);
   assert.equal(adult.canOfferRewarded('hint'), true);

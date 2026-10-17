@@ -19,6 +19,10 @@ test('shipped game config stays inside the guardrails', () => {
   assert.deepEqual(pacing.ads.interstitial.intervalArms, [90, 120, 180]);
   assert.equal(pacing.ads.interstitial.minSecondsBetween, 120);
   assert.equal(pacing.ads.rewarded.optInOnly, true);
+  assert.equal(pacing.privacy.childrenAdsAllowed, true);
+  assert.equal(pacing.privacy.personalizedAds, false);
+  assert.equal(pacing.ads.personalized, false);
+  assert.equal(tuning.rewardedMinMoves, 15);
   assert.deepEqual(pacing.ads.rewarded.placements, ['continue', 'hint', 'reroll', 'double_score']);
   for (const key of ['flashMs', 'particleLifeMs', 'popupMs', 'shakeMs', 'invalidShakeMs', 'snapBackMs']) {
     assert.ok(tuning.juice[key] < 400, key);

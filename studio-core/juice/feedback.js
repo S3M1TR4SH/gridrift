@@ -319,6 +319,7 @@ export function createFeedback({
       shakeX,
       shakeY,
       snap,
+      settled: alive.length === 0,
       flashId: juice.flashId,
       dragLiftPx: juice.dragLiftPx
     };

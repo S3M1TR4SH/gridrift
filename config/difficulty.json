@@ -1,0 +1,133 @@
+{
+  "version": "1.2",
+  "basedOn": "PR #15 b0b535d (v1.1)",
+  "inputs": [
+    "board",
+    "moves",
+    "elapsedMs",
+    "score",
+    "totalClears",
+    "assistDealsLeft"
+  ],
+  "excludedInputs": [
+    "bestScore",
+    "adAvailability",
+    "rewardedReady",
+    "adFill",
+    "lossHistory"
+  ],
+  "hardRules": {
+    "failBias": 0,
+    "forceUnplaceable": false,
+    "allowStuckState": false
+  },
+  "timeModel": {
+    "secondsPerMove": 2.5,
+    "note": "Fallback only when elapsed play time is still zero. A running play clock wins, so a 2.2 s/move player keeps the full 60 s opening."
+  },
+  "roundSetup": {
+    "prefillRound1": "onboarding opening only",
+    "prefillAfterRound1": false
+  },
+  "gridSize": {
+    "opening": 6,
+    "fromRound": 2,
+    "size": 8
+  },
+  "goals": [
+    4,
+    6,
+    10,
+    14
+  ],
+  "ramp": {
+    "startS": 60.0,
+    "fullS": 80.0,
+    "scoreStart": 250,
+    "scoreFull": 550,
+    "scoreWeight": 0.8,
+    "curveExponent": 0.6
+  },
+  "generosity": {
+    "earlyClearBias": 0.6,
+    "lateClearBias": 0,
+    "fitAllBelowIntensity": 0.15
+  },
+  "tiers": [
+    {
+      "at": 0,
+      "shapes": {
+        "line2": 2,
+        "line2v": 2,
+        "line3": 3,
+        "line3v": 3,
+        "square": 2,
+        "corner": 3
+      }
+    },
+    {
+      "at": 0.3,
+      "shapes": {
+        "line3": 2,
+        "line3v": 2,
+        "l": 2,
+        "j": 2,
+        "t": 2,
+        "s": 2,
+        "z": 2,
+        "square": 2,
+        "u": 1,
+        "corner": 1
+      }
+    },
+    {
+      "at": 0.55,
+      "shapes": {
+        "line4": 2,
+        "line4v": 2,
+        "l": 2,
+        "j": 2,
+        "t": 2,
+        "s": 2,
+        "z": 2,
+        "u": 2,
+        "plus": 1,
+        "rect": 1,
+        "corner3": 1,
+        "sTall": 1,
+        "zTall": 1
+      }
+    },
+    {
+      "at": 0.8,
+      "shapes": {
+        "line4": 2,
+        "line4v": 2,
+        "line5": 2,
+        "plus": 3,
+        "rect": 3,
+        "corner3": 3,
+        "sTall": 2,
+        "zTall": 2,
+        "u": 2
+      }
+    }
+  ],
+  "assist": {
+    "continueAssistDeals": 2,
+    "assistClearBias": 1,
+    "assistShapes": [
+      "line2",
+      "line2v",
+      "line3",
+      "line3v",
+      "square",
+      "corner"
+    ],
+    "continueRowsCleared": 3
+  },
+  "danger": {
+    "fewPlacements": 8,
+    "criticalPlacements": 4
+  }
+}

@@ -1,19 +1,25 @@
 import assetManifest from '../assets.manifest.json' with { type: 'json' };
 import brand from '../branding/brand.json' with { type: 'json' };
 import analyticsConfig from '../config/analytics.json' with { type: 'json' };
+import difficultyConfig from '../config/difficulty.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
 import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
 import {
   applyAnalyticsChoice,
   celebrationLevel,
+  consentFromBirthYear,
+  createAdMobAdapter,
   createConsentStore,
   createFeedback,
   createGuardedAds,
+  createH5GamesAdsAdapter,
   createInstallController,
   createMixpanelAdapter,
+  createNoopAdapter,
   createPacer,
   createTracker,
+  createWebAdBridge,
   evaluateAgeGate,
   memoryStorage,
   neutralizePacing,
@@ -24,23 +30,26 @@ import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
 import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';
 import {
+  HINT_MIN_MOVES,
   INPUT_GUARD_MS,
   agePrompt,
   canOfferContinue,
   canOfferDouble,
   canOfferHint,
   canOfferReroll,
+  settleGameOver,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
   shouldIgnoreInput,
-  viewModel,
-  welcomeCopy
+  viewModel
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
-import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
+import { CONTROL_GAP_PX, computeLayout, dragPieceOrigin, hitTray, pointerLift, pointerToBoard, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
-import { canPlace, createMatch, isStuck } from './logic.js';
+import { dangerCue, dropFeedback, placementCount, roundClearedNotice } from './danger.js';
+import { easedRun, generateTray, goalForRound, gridForRound } from './difficulty.js';
+import { canPlace, createBoard, createMatch, isStuck, nextScoreGoal } from './logic.js';
 import { coachMarks, openingBoard, scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
 import { beginRun, milestoneHit, noteLoss, noteSuccess, shouldShowWelcome, STREAK_RESET_COPY, bandShapes } from './retention.js';
 import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
@@ -90,6 +99,7 @@ function start() {
   document.documentElement.style.setProperty('--accent', registry.get('ui.button_rectangle_flat.blue').color);
   document.body.style.fontFamily = registry.get('font.kenney-future').family;
 
+  const simClock = new URLSearchParams(window.location.search).has('sim');
   const storage = bootStorage();
   const saveStore = createSaveStore(storage);
   let progress = saveStore.load();
@@ -103,10 +113,32 @@ function start() {
   void tracker.sync();
   const pacer = createPacer({
     pacing,
-    isChild: () => !consent || Boolean(consent.isChild),
+    isChild: () => Boolean(consent?.isChild),
     sessionNumber: (progress.sessions || 0) + 1
   });
-  const ads = createGuardedAds({ pacer });
+  const adBridge = createWebAdBridge();
+  const noopAds = createNoopAdapter();
+  const childDirected = () => Boolean(consent?.isChild);
+  const h5Ads = createH5GamesAdsAdapter({ childDirected });
+  const admobAds = createAdMobAdapter({ bridge: adBridge, childDirected });
+  function liveAdapter() {
+    if (!consent?.birthYear || consent.adsAllowed === false || pacing.ads?.testMode !== true) return noopAds;
+    return adBridge.available ? admobAds : h5Ads;
+  }
+  const ads = createGuardedAds({
+    pacer,
+    adapter: {
+      get id() {
+        return liveAdapter().id;
+      },
+      showInterstitial(request) {
+        return liveAdapter().showInterstitial(request);
+      },
+      showRewarded(request) {
+        return liveAdapter().showRewarded(request);
+      }
+    }
+  });
   let reducedMotion = initialMotion({
     stored: progress.settings?.reducedMotion ?? null,
     query: typeof matchMedia === 'function' ? matchMedia.bind(window) : null
@@ -159,10 +191,54 @@ function start() {
   let rewardKind = null;
   let sessionNoted = false;
   let overlayKey = '';
+  let assistDealsLeft = 0;
+  let roundNoticeUntil = 0;
+  let lastDangerLevel = 0;
+  let pendingGameOver = null;
+  let checkpoint = progress.run?.checkpoint ?? null;
+  const roundNotice = roundClearedNotice();
+
+  function offerFloor() {
+    return tuning.rewardedMinMoves ?? HINT_MIN_MOVES;
+  }
+
+  function rememberCheckpoint() {
+    const state = match.state;
+    checkpoint = {
+      round: roundNumber(),
+      levelIndex,
+      mode,
+      grid: state.grid,
+      board: state.board.map((row) => row.slice()),
+      pieces: state.pieces.map((piece) => (piece ? {
+        shapeName: piece.shapeName,
+        color: piece.color,
+        tileId: piece.tileId
+      } : null)),
+      score: state.score,
+      streak: state.streak,
+      bestStreak: state.bestStreak,
+      roundClears: state.roundClears,
+      totalClears: state.totalClears,
+      targetClears: state.targetClears
+    };
+  }
+
+  function roundNumber() {
+    return levelIndex + 1;
+  }
 
   function level() {
     const id = tuning.levelOrder[Math.min(levelIndex, tuning.levelOrder.length - 1)];
     return LEVELS[id] ?? LEVELS['round-01'];
+  }
+
+  function roundGoal() {
+    return goalForRound(roundNumber(), difficultyConfig);
+  }
+
+  function roundGrid() {
+    return gridForRound(roundNumber(), difficultyConfig);
   }
 
   function scoreTuning() {
@@ -188,15 +264,36 @@ function start() {
 
   function makeMatch(saved) {
     const dailyTarget = dailyObjective(utcSeed(), retention.dailyChallenge.objectiveRange);
+    const grid = saved?.board?.length || (mode === 'daily' ? tuning.grid : roundGrid());
     return createMatch({
-      grid: tuning.grid,
+      grid,
       traySize: tuning.traySize,
       score: scoreTuning(),
       rng: mulberry32(mode === 'daily'
         ? utcSeed()
         : ((Date.now() ^ ((levelIndex + 1) * 997)) >>> 0)),
-      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : level().targetClears),
+      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : roundGoal()),
       poolFor: dealPool,
+      generator: difficultyConfig && mode !== 'daily'
+        ? (board, state, rng) => {
+          const run = easedRun({
+            moves,
+            elapsedMs: playMs,
+            score: state.score,
+            totalClears: state.totalClears,
+            assistDealsLeft
+          }, { mercy: easyRun, cfg: difficultyConfig });
+          const out = generateTray({
+            board,
+            run,
+            cfg: difficultyConfig,
+            rng,
+            count: tuning.traySize
+          });
+          if (out.assist && assistDealsLeft > 0) assistDealsLeft -= 1;
+          return out;
+        }
+        : null,
       palette,
       saved
     });
@@ -241,11 +338,12 @@ function start() {
 
   let match;
   if (progress.run) match = makeMatch(progress.run);
-  else if (retention.onboarding.enabled && coachStep !== null) {
-    onboardingStarted = performance.now();
+  else {
+    if (retention.onboarding.enabled && coachStep !== null) onboardingStarted = performance.now();
     match = freshOpening();
-    match.showHint();
-  } else match = makeMatch();
+    if (coachStep !== null) match.showHint();
+  }
+  if (!progress.run) rememberCheckpoint();
 
   function trackRunStart() {
     tracker.track('run_start', {
@@ -255,6 +353,8 @@ function start() {
   }
 
   function screen() {
+    if (!consent?.birthYear) return 'age_gate';
+    if (consent.needsAnalyticsPrompt) return 'stats_consent';
     if (overlay?.screen) return overlay.screen;
     return 'play';
   }
@@ -295,8 +395,21 @@ function start() {
 
   function persist() {
     const state = match.state;
+    const today = formatLocalDate(new Date());
+    const bestScore = Math.max(progress.bestScore || 0, state.score);
+    let yesterdayBest = progress.yesterdayBest || 0;
+    let dayBest = progress.dayBest || 0;
+    if (progress.bestDay && progress.bestDay !== today) {
+      yesterdayBest = dayBest || progress.bestScore || 0;
+      dayBest = state.score;
+    } else {
+      dayBest = Math.max(dayBest, state.score);
+    }
     progress = saveStore.save({
-      bestScore: Math.max(progress.bestScore || 0, state.score),
+      bestScore,
+      yesterdayBest,
+      dayBest,
+      bestDay: today,
       tutorialSeen: progress.tutorialSeen === true,
       sessions,
       installDay,
@@ -328,7 +441,8 @@ function start() {
         sawStuck,
         mode,
         dryMoves: state.dryMoves,
-        phase: state.phase
+        phase: state.phase,
+        checkpoint
       }
     });
   }
@@ -341,7 +455,8 @@ function start() {
       now: Date.now(),
       minAwayMinutes: away.minAwayMinutes
     }));
-    if (!welcomeOpen) overlay = null;
+    if (welcomeOpen) overlay = { screen: 'welcome_back' };
+    else if (!overlay || overlay.screen === 'welcome_back') overlay = null;
     publishOverlay(true);
   }
 
@@ -395,11 +510,12 @@ function start() {
   }
 
   function doubleReady() {
-    if (consent?.isChild) return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('double_score')) return false;
     return canOfferDouble({
       doublesUsed,
+      moves,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('double_score')
     });
   }
@@ -445,7 +561,20 @@ function start() {
       streak: match.state.streak
     });
     persist();
-    show({ screen: 'round_complete', doubleScore: doubleReady() });
+    roundNoticeUntil = performance.now() + roundNotice.dismissMs;
+    ui.setRoundNotice(roundNotice.text);
+    const advance = planRoundAdvance({
+      interstitialAllowed: interstitialAllowed('between_rounds')
+    });
+    if (advance === 'ad_then_next') {
+      const result = ads.showInterstitial({ breakType: 'between_rounds' });
+      if (result.shown) {
+        tracker.track('ad_break_shown', { break: 'between_rounds' });
+        show({ screen: 'ad_break', after: 'next_round' });
+        return;
+      }
+    }
+    startNextRound();
   }
 
   function finishGame() {
@@ -489,10 +618,28 @@ function start() {
   }
 
   function startNextRound() {
+    const kept = match.state;
     levelIndex = Math.min(levelIndex + 1, tuning.levelOrder.length - 1);
-    match.nextRound(level().targetClears);
+    const nextGrid = roundGrid();
+    const goal = roundGoal();
+    if (nextGrid !== kept.grid) {
+      match = makeMatch({
+        board: createBoard(nextGrid),
+        pieces: [null, null, null],
+        score: kept.score,
+        streak: kept.streak,
+        bestStreak: kept.bestStreak,
+        totalClears: kept.totalClears,
+        roundClears: 0,
+        phase: 'playing',
+        targetClears: goal
+      });
+    } else {
+      match.nextRound(goal);
+    }
     overlay = null;
-    armIgnore();
+    if (!pointer.drag) pointer = createPointerState();
+    rememberCheckpoint();
     tracker.track('round_start', { round: level().id });
     tap();
     persist();
@@ -507,10 +654,12 @@ function start() {
     doublesUsed = 0;
     playMs = 0;
     sawStuck = false;
+    assistDealsLeft = 0;
+    moves = 0;
   }
 
   function hintReady() {
-    if (screen() !== 'play' || consent?.isChild) return false;
+    if (screen() !== 'play') return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return false;
     return canOfferHint({
@@ -518,20 +667,54 @@ function start() {
       stuck: sawStuck,
       hintsUsed,
       moves,
-      minMoves: tuning.hintMinMoves ?? 15,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('hint')
     });
   }
 
   function rerollReady() {
-    if (screen() !== 'play' || consent?.isChild) return false;
+    if (screen() !== 'play') return false;
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('reroll')) return false;
     return canOfferReroll({
       stuck: isStuck(match.state.board, match.state.pieces),
       rerollsUsed,
+      moves,
+      minMoves: offerFloor(),
       rewardedAllowed: ads.canOfferRewarded('reroll')
     });
+  }
+
+  function retryRound() {
+    if (!checkpoint) {
+      restart();
+      return;
+    }
+    levelIndex = checkpoint.levelIndex || 0;
+    mode = checkpoint.mode || 'arcade';
+    welcomeOpen = false;
+    resetRunCounters();
+    rewardKind = null;
+    match = makeMatch({
+      board: checkpoint.board,
+      pieces: checkpoint.pieces,
+      score: checkpoint.score,
+      streak: checkpoint.streak,
+      bestStreak: checkpoint.bestStreak,
+      roundClears: checkpoint.roundClears,
+      totalClears: checkpoint.totalClears,
+      phase: 'playing',
+      targetClears: checkpoint.targetClears
+    });
+    moves = 0;
+    overlay = null;
+    pointer = createPointerState();
+    pendingGameOver = null;
+    armIgnore();
+    tracker.track('restart', { round: checkpoint.round });
+    trackRunStart();
+    tap();
+    persist();
   }
 
   function restart() {
@@ -542,10 +725,12 @@ function start() {
     resetRunCounters();
     rewardKind = null;
     startEasyRun();
-    match = makeMatch();
+    match = freshOpening();
     moves = 0;
     overlay = null;
     pointer = createPointerState();
+    pendingGameOver = null;
+    rememberCheckpoint();
     armIgnore();
     tracker.track('restart', {});
     trackRunStart();
@@ -589,6 +774,7 @@ function start() {
       }
     } else {
       continueUses += 1;
+      assistDealsLeft = difficultyConfig.assist?.continueAssistDeals || 0;
       const outcome = match.continueRun(rowsForContinue(tuning.continueClears));
       overlay = null;
       audio.play('sfx.clear');
@@ -629,18 +815,47 @@ function start() {
       });
       return;
     }
+    if (id.startsWith('birth_year:')) {
+      const year = Number(id.slice('birth_year:'.length));
+      try {
+        consent = consentStore.save(consentFromBirthYear(year));
+      } catch {
+        return;
+      }
+      ui.clearAgeGate();
+      tap();
+      void tracker.sync();
+      return;
+    }
     if (id === 'age_under') {
-      consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      const year = new Date().getFullYear() - 8;
+      consent = consentStore.save(consentFromBirthYear(year));
       consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      ui.clearAgeGate();
       tap();
       void tracker.sync();
       return;
     }
     if (id === 'age_13') {
-      consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
-      consent = consentStore.save(applyAnalyticsChoice(consent, 'denied'));
+      const year = new Date().getFullYear() - 20;
+      consent = consentStore.save(consentFromBirthYear(year));
+      ui.clearAgeGate();
       tap();
       void tracker.sync();
+      return;
+    }
+    if (id === 'ask_restart') {
+      tap();
+      show({ screen: 'restart_confirm' });
+      return;
+    }
+    if (id === 'cancel_restart') {
+      tap();
+      show({
+        screen: 'game_over',
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true, continueClosed),
+        doubleScore: doubleReady()
+      });
       return;
     }
     if (id === 'analytics_yes' || id === 'analytics_no') {
@@ -694,6 +909,8 @@ function start() {
       moves = 0;
       pointer = createPointerState();
       overlay = null;
+      welcomeOpen = false;
+      rememberCheckpoint();
       armIgnore();
       tap();
       tracker.track('daily_start', { seed: utcSeed() });
@@ -712,6 +929,8 @@ function start() {
       match = makeMatch();
       moves = 0;
       pointer = createPointerState();
+      welcomeOpen = false;
+      rememberCheckpoint();
       tap();
       overlay = null;
       armIgnore();
@@ -747,6 +966,10 @@ function start() {
       restart();
       return;
     }
+    if (id === 'retry_round') {
+      retryRound();
+      return;
+    }
     if (id === 'offer_continue' || id === 'offer_hint' || id === 'offer_reroll' || id === 'offer_double') {
       const kind = id === 'offer_hint'
         ? 'hint'
@@ -758,7 +981,7 @@ function start() {
       if (kind === 'hint' && !hintReady()) return;
       if (kind === 'reroll' && !rerollReady()) return;
       if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'), continueClosed)) return;
-      if (kind === 'double_score' && !canOfferDouble({ doublesUsed, rewardedAllowed: ads.canOfferRewarded('double_score') })) return;
+      if (kind === 'double_score' && !doubleReady()) return;
       if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
@@ -809,6 +1032,14 @@ function start() {
   function publishOverlay(force) {
     const state = match.state;
     const name = screen();
+    if (name === 'age_gate') {
+      const current = new Date().getFullYear();
+      const years = [];
+      for (let year = current; year >= 1900; year -= 1) years.push(year);
+      ui.setAgeGate({ years, copy: 'What year were you born?' });
+      return;
+    }
+    ui.clearAgeGate();
     const view = viewModel({
       screen: name,
       rewarded: Boolean(overlay?.rewarded),
@@ -823,7 +1054,11 @@ function start() {
       levelName: level().name,
       clears: state.roundClears,
       clearsGoal: state.targetClears,
-      continueRows: tuning.continueClears
+      continueRows: tuning.continueClears,
+      roundNumber: roundNumber(),
+      checkpoint: Boolean(checkpoint),
+      yesterdayBest: progress.yesterdayBest || 0,
+      dailyStatus: daily.lastCompleted === streakDay(new Date(), retention.dayStreak.rolloverHourLocal) ? 'done' : 'unplayed'
     });
     const key = JSON.stringify(view);
     if (!force && key === overlayKey) return;
@@ -855,24 +1090,20 @@ function start() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(layout.canvasWidth * dpr);
     canvas.height = Math.round(layout.canvasHeight * dpr);
-    canvas.style.width = '100%';
-    canvas.style.height = `${playHeight}px`;
+    canvas.style.width = `${layout.canvasWidth}px`;
+    canvas.style.maxWidth = '100%';
+    canvas.style.height = 'auto';
+    canvas.style.aspectRatio = `${layout.canvasWidth} / ${layout.canvasHeight}`;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function pointFrom(event) {
-    const rect = canvas.getBoundingClientRect();
-    return pointerScale(
-      { x: event.clientX - rect.left, y: event.clientY - rect.top },
-      rect,
-      layout
-    );
+    return pointerToBoard(event.clientX, event.clientY, canvas.getBoundingClientRect(), layout);
   }
 
   function liftPx() {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    if (coarse || pointerKind === 'touch') return retention.onboarding.dragOffsetPx;
-    return 0;
+    return pointerLift(pointerKind, { coarse, touchLift: retention.onboarding.dragOffsetPx });
   }
 
   function hitAt(point, piece) {
@@ -882,7 +1113,8 @@ function start() {
     let snapY = 0;
     let ghostValid = false;
     if (piece && overBoard) {
-      const snap = snapOrigin(point.x, point.y, layout.cell, piece.shape);
+      const anchor = dragPieceOrigin(point, liftPx());
+    const snap = snapOrigin(anchor.x, anchor.y, layout.cell, piece.shape);
       snapX = snap.x;
       snapY = snap.y;
       ghostValid = canPlace(match.state.board, piece.shape, snapX, snapY);
@@ -894,12 +1126,14 @@ function start() {
       snapX,
       snapY,
       ghostValid,
-      ignore: screen() !== 'play' || shouldIgnoreInput(performance.now(), ignoreUntil)
+      ignore: screen() !== 'play' || roundNotice.blocking || shouldIgnoreInput(performance.now(), ignoreUntil)
     };
   }
 
   function commitPlace(index, x, y, point = null) {
+    moves += 1;
     const result = match.place(index, x, y);
+    if (!result.ok) moves -= 1;
     if (!result.ok) {
       if (point) {
         const piece = match.state.pieces[index];
@@ -919,7 +1153,6 @@ function start() {
       return result;
     }
     audio.play('sfx.place');
-    moves += 1;
     tracker.track('piece_placed', { cells: result.gained, x, y });
     if (result.lines > 0) {
       const burst = feedback.clear({
@@ -962,7 +1195,11 @@ function start() {
     }
     persist();
     if (result.roundComplete) finishRound();
-    else if (result.gameOver) finishGame();
+    else if (result.gameOver) {
+      pointer = createPointerState();
+      if (settleGameOver({ gameOver: true, lines: result.lines, animating: result.lines > 0 })) finishGame();
+      else pendingGameOver = { lines: result.lines };
+    }
     return result;
   }
 
@@ -981,7 +1218,7 @@ function start() {
     }, hit);
     pointer = reduced.state;
     if (!reduced.effect || reduced.effect.type === 'select' || reduced.effect.type === 'cancel') {
-      if (reduced.effect?.type === 'cancel' && reduced.effect.moved && Number.isInteger(reduced.effect.index)) {
+      if (dropFeedback(reduced.effect, hit) === 'sfx.invalid' && Number.isInteger(reduced.effect.index)) {
         const piece = match.state.pieces[reduced.effect.index];
         const slot = traySlots(layout)[reduced.effect.index];
         const burst = feedback.invalid({
@@ -1032,10 +1269,23 @@ function start() {
     const now = performance.now();
     const elapsed = Math.max(0, Math.min(1000, now - lastTick));
     lastTick = now;
-    if (screen() === 'play') playMs += elapsed;
+    if (screen() === 'play' && !simClock) playMs += elapsed;
     if (!sawStuck && screen() === 'play' && isStuck(match.state.board, match.state.pieces)) sawStuck = true;
     const state = match.state;
+    if (roundNoticeUntil && now >= roundNoticeUntil) {
+      roundNoticeUntil = 0;
+      ui.setRoundNotice('');
+    }
+    const cue = screen() === 'play'
+      ? dangerCue(placementCount(state.board, state.pieces), difficultyConfig.danger)
+      : null;
+    if (cue?.sound && !reducedMotion && cue.level !== lastDangerLevel) audio.play(cue.sound);
+    lastDangerLevel = cue?.level || 0;
     const fx = feedback.sample(now);
+    if (pendingGameOver && fx.settled && settleGameOver({ gameOver: true, lines: pendingGameOver.lines, animating: false })) {
+      pendingGameOver = null;
+      finishGame();
+    }
     let ghost = null;
     let drag = null;
     const active = pointer.drag ? state.pieces[pointer.drag.index] : null;
@@ -1045,7 +1295,8 @@ function start() {
         && pointer.drag.x < layout.boardSize
         && pointer.drag.y < layout.boardSize;
       if (overBoard) {
-        const snap = snapOrigin(pointer.drag.x, pointer.drag.y, layout.cell, active.shape);
+        const anchor = dragPieceOrigin(pointer.drag, liftPx());
+        const snap = snapOrigin(anchor.x, anchor.y, layout.cell, active.shape);
         ghost = {
           ...snap,
           shape: active.shape,
@@ -1061,6 +1312,10 @@ function start() {
         lift: liftPx()
       };
     }
+    if (pendingGameOver || state.phase === 'game_over') {
+      ghost = null;
+      drag = null;
+    }
     drawScene(ctx, {
       layout,
       board: state.board,
@@ -1070,12 +1325,15 @@ function start() {
       ghost,
       hint: state.hint,
       selected: pointer.selected,
-      juice: fx
+      juice: fx,
+      danger: cue ? { level: cue.level, reduced: reducedMotion, time: now } : null
     });
     const steps = feedback.config.streakSteps;
     const meterMax = steps[steps.length - 1] || 6;
     ui.setHud({
       score: state.score,
+      nextGoal: nextScoreGoal(state.score, tuning.score.goals),
+      lowSpace: dangerCue(placementCount(state.board, state.pieces), difficultyConfig.danger)?.label || '',
       best: Math.max(progress.bestScore || 0, state.score),
       streak: state.streak,
       combo: state.combo,
@@ -1086,7 +1344,7 @@ function start() {
         ? coachMarks(state.targetClears)[Math.min(coachStep, coachMarks(state.targetClears).length - 1)].text
         : mode === 'daily'
           ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}${dailyNote ? ` · ${dailyNote}` : ''}`
-          : `Clear ${state.targetClears} lines`,
+          : `Clear ${state.targetClears} lines · Next ${nextScoreGoal(state.score, tuning.score.goals)}`,
       meter: Math.max(0, Math.min(1, state.streak / meterMax)),
       meterMax,
       celebrate: celebrationLevel(state.streak, steps),
@@ -1095,9 +1353,10 @@ function start() {
       reroll: rerollReady() ? 'ready' : 'off',
       dailyLabel: mode === 'daily' ? `Daily ${daily.streak || 0}` : 'Daily',
       dailyOn: mode === 'daily',
+      dailyBadge: daily.lastCompleted !== streakDay(new Date(), retention.dayStreak.rolloverHourLocal),
       reducedMotion,
       haptics: hapticsOn,
-      install: install.available && screen() === 'play',
+      install: install.available,
       stats: screen() === 'play' && Boolean(consent && !consent.isChild && consent.analyticsAllowed),
       muted: audio.muted
     });
@@ -1114,24 +1373,7 @@ function start() {
   let lastHeaderH = 0;
 
   function paintBanner() {
-    const state = match.state;
-    const prompt = agePrompt(consent);
-    if (prompt) ui.setBanner(prompt);
-    else if (welcomeOpen) {
-      ui.setBanner({
-        body: welcomeCopy({
-          levelName: level().name,
-          clears: state.roundClears,
-          clearsGoal: state.targetClears,
-          bestScore: Math.max(progress.bestScore || 0, state.score),
-          streak: daily.streak || 0
-        }),
-        actions: [
-          { id: 'new_game', label: 'New game', primary: false },
-          { id: 'resume', label: 'Continue level', primary: true }
-        ]
-      });
-    } else ui.setBanner(null);
+    ui.setBanner(agePrompt(consent));
   }
 
   attachSimBridge({
@@ -1147,6 +1389,14 @@ function start() {
     getRewardKind: () => overlay?.kind || rewardKind || null,
     getBreak: () => overlay?.after || null,
     getRound: () => level().name,
+    getRoundNumber: () => roundNumber(),
+    getPlayMs: () => playMs,
+    advancePlay: (ms) => {
+      const delta = Math.max(0, Number(ms) || 0);
+      if (screen() !== 'play' || delta === 0) return 0;
+      playMs += delta;
+      return delta;
+    },
     canHint: () => hintReady(),
     performUi: (id) => onAction(id),
     performMove: (index, x, y) => commitPlace(index, x, y)

@@ -171,6 +171,28 @@ export function findHint(board, shape) {
   return spot ? { x: spot.x, y: spot.y } : null;
 }
 
+export function chainPayoff(table, length) {
+  if (!Array.isArray(table) || length <= 0) return 0;
+  let total = 0;
+  const last = Number(table[table.length - 1]) || 0;
+  for (let step = 1; step <= length; step += 1) {
+    const marginal = step < table.length ? Number(table[step]) || 0 : last;
+    total += marginal;
+  }
+  return total;
+}
+
+export function nextScoreGoal(score, goals = [40, 100, 200, 360, 600, 1000]) {
+  const list = (Array.isArray(goals) ? goals : []).filter((goal) => typeof goal === 'number' && goal > 0).sort((a, b) => a - b);
+  const current = Number(score) || 0;
+  const found = list.find((goal) => goal > current);
+  if (found) return found;
+  const last = list[list.length - 1] || 40;
+  const prev = list.length > 1 ? list[list.length - 2] : 0;
+  const step = Math.max(1, last - prev);
+  return last + step * (Math.floor(Math.max(0, current - last) / step) + 1);
+}
+
 export function scorePlacement({ cells, lines, streak, tuning }) {
   const place = cells * tuning.place;
   if (lines <= 0) return place;
@@ -181,7 +203,8 @@ export function scorePlacement({ cells, lines, streak, tuning }) {
     1 + Math.max(0, streak - 1) * tuning.streakMultiplierStep
   );
   const stepBonus = Math.max(0, streak) * (Number(tuning.bonusPerStep) || 0);
-  return place + Math.round((linePoints + comboBonus) * multiplier) + stepBonus;
+  const chains = chainPayoff(tuning.comboChain, lines) + chainPayoff(tuning.streakChain, streak);
+  return place + Math.round((linePoints + comboBonus) * multiplier) + stepBonus + chains;
 }
 
 export function clearFullestRows(board, count) {
@@ -237,7 +260,8 @@ export function createMatch({
   targetClears = 4,
   poolFor = () => SAFE_SHAPES,
   palette = [],
-  saved = null
+  saved = null,
+  generator = null
 }) {
   let board = createBoard(grid);
   let pieces = emptySlots(traySize);
@@ -253,6 +277,19 @@ export function createMatch({
   let dryMoves = 0;
 
   function deal() {
+    if (generator) {
+      const colors = palette?.length ? palette : [{ id: 'tile.grey', color: '#8b95a8' }];
+      const out = generator(board, { score: points, totalClears }, rng);
+      const names = Array.isArray(out?.names) ? out.names : [];
+      pieces = emptySlots(traySize).map((_, index) => {
+        const name = names[index];
+        if (!name || !SHAPES[name]) return null;
+        const color = colors[Math.floor(rng() * colors.length) % colors.length];
+        return { shapeName: name, shape: SHAPES[name], color: color.color, tileId: color.id };
+      });
+      if (out?.gameOver || !hasAnyMove(board, pieces)) phase = 'game_over';
+      return;
+    }
     const dealt = dealPieces({
       board,
       pool: poolFor(totalClears, points),

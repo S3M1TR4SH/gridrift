@@ -264,7 +264,7 @@ function validateDifficulty(difficulty, violations) {
   }
 }
 
-function validatePrivacy(privacy, violations) {
+function validatePrivacy(privacy, ads, violations) {
   if (!isPlainObject(privacy)) {
     violations.push(violation('privacy.required', 'privacy config is required', privacy));
     return;
@@ -281,8 +281,8 @@ function validatePrivacy(privacy, violations) {
     }
   }
   if (expectBoolean(violations, privacy.childrenAdsAllowed, 'privacy.childrenAds', 'childrenAdsAllowed is required')) {
-    if (privacy.childrenAdsAllowed) {
-      violations.push(violation('privacy.childrenAds', 'children cannot be shown ads', true));
+    if (privacy.childrenAdsAllowed && (privacy.personalizedAds === true || ads?.personalized === true)) {
+      violations.push(violation('privacy.childrenAds', 'children can only be shown non-personalized ads', true));
     }
   }
   if (expectBoolean(violations, privacy.childrenAnalyticsAllowed, 'privacy.childrenAnalytics', 'childrenAnalyticsAllowed is required')) {
@@ -307,11 +307,14 @@ function validateAds(ads, violations) {
     violations.push(violation('ads.required', 'ads config is required', ads));
     return;
   }
-  const allowed = new Set(['interstitial', 'rewarded', 'personalized']);
+  const allowed = new Set(['interstitial', 'rewarded', 'personalized', 'testMode']);
   for (const key of Object.keys(ads)) {
     if (!allowed.has(key)) {
       violations.push(violation('ads.unexpected', `unexpected ads field ${key}`, key));
     }
+  }
+  if (ads.testMode != null && ads.testMode !== true) {
+    violations.push(violation('ads.testMode', 'test mode is only the Google demo units', ads.testMode));
   }
   if (expectBoolean(violations, ads.personalized, 'ads.personalized', 'ads.personalized is required')) {
     if (ads.personalized) {
@@ -328,7 +331,7 @@ export function validateTuning(tuning) {
     return { ok: false, violations: [violation('tuning.required', 'tuning config is required', tuning)] };
   }
   violations.push(...findUnsafeLiterals(tuning, '$.tuning'));
-  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score', 'juice']);
+  const allowed = new Set(['grid', 'traySize', 'continueClears', 'levelOrder', 'score', 'juice', 'rewardedMinMoves']);
   for (const key of Object.keys(tuning)) {
     if (!allowed.has(key)) violations.push(violation('tuning.unexpected', `unexpected tuning field ${key}`, key));
   }
@@ -337,6 +340,9 @@ export function validateTuning(tuning) {
   }
   if (typeof tuning.traySize !== 'number' || tuning.traySize < 1 || tuning.traySize > 3) {
     violations.push(violation('tuning.traySize', 'traySize must be from 1 to 3', tuning.traySize));
+  }
+  if (tuning.rewardedMinMoves != null && (typeof tuning.rewardedMinMoves !== 'number' || tuning.rewardedMinMoves < 0)) {
+    violations.push(violation('tuning.rewardedMinMoves', 'rewardedMinMoves must be a non-negative number', tuning.rewardedMinMoves));
   }
   if (typeof tuning.continueClears !== 'number') {
     violations.push(violation('tuning.continueClears', 'continueClears is required', tuning.continueClears));
@@ -361,6 +367,22 @@ export function validateTuning(tuning) {
       if (typeof score[key] !== 'number' || score[key] < 0) {
         violations.push(violation('tuning.score', `score.${key} must be a non-negative number`, score[key]));
       }
+    }
+    for (const key of ['comboChain', 'streakChain']) {
+      if (score[key] == null) continue;
+      const table = score[key];
+      const rising = Array.isArray(table) && table.length >= 2 && table.length <= 12
+        && table.every((value) => typeof value === 'number' && value >= 0);
+      if (!rising || !table.some((value, index) => index > 0 && value > table[index - 1])) {
+        violations.push(violation('tuning.score', `score.${key} must escalate`, table));
+      }
+    }
+    if (score.goals != null) {
+      const goals = score.goals;
+      const ok = Array.isArray(goals) && goals.length > 0 && goals.every((goal, index) => (
+        typeof goal === 'number' && goal > 0 && (index === 0 || goal > goals[index - 1])
+      ));
+      if (!ok) violations.push(violation('tuning.score', 'score.goals must increase', goals));
     }
   }
   validateJuice(tuning.juice, violations);
@@ -447,7 +469,7 @@ export function validatePacing(pacing) {
   }
   validateAds(pacing.ads, violations);
   validateDifficulty(pacing.difficulty, violations);
-  validatePrivacy(pacing.privacy, violations);
+  validatePrivacy(pacing.privacy, pacing.ads, violations);
   return { ok: violations.length === 0, violations };
 }
 

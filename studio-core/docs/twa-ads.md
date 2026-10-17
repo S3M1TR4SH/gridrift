@@ -18,7 +18,7 @@ Native AdMob can show an interstitial at a break the game already treats as a na
 
 ## H5 Games Ads and AdSense
 
-Ads that are part of the page can run inside a TWA, because the TWA is the page. Google's H5 Games Ads and AdSense tags are web scripts. They are the format that matches this package if ads are turned on later. They still have to pass the studio-core pacer: no ads for under-13 players, interstitials only at `game_over` and `between_rounds`, rewarded placements only `continue` and `hint` after opt-in, and no personalized ads for children. A web tag must not load before that consent decision.
+Ads that are part of the page can run inside a TWA, because the TWA is the page. Google's H5 Games Ads and AdSense tags are web scripts. They are the format that matches this package if ads are turned on later. They still have to pass the studio-core pacer: non-personalized ads only for under-13 players, interstitials only at `game_over` and `between_rounds`, rewarded placements only after opt-in, and no personalized ads for children. A web tag must not load before that consent decision.
 
 AdSense in a game also changes the Play ads declaration, Families policy if under-13 players can still launch the app, and the Data safety form. The current web build does not include those tags. The in-game advertisement screen is a local placeholder and does not request a network.
 

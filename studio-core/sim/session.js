@@ -23,14 +23,18 @@ function observe(log, prev, state, step) {
     log.clears += delta;
     if ((state.combo ?? 0) >= 2) log.combos.push({ step, lines: state.combo });
   }
+  const roundNumber = Number(state.roundNumber);
+  if (Number.isFinite(roundNumber) && roundNumber > (log.maxRound || 0)) log.maxRound = roundNumber;
   if (state.failed && !prev?.failed) {
     log.failPoints.push({
       step,
       score: state.score ?? 0,
       clears: state.clears ?? 0,
-      screen: state.screen ?? ''
+      screen: state.screen ?? '',
+      round: Number.isFinite(roundNumber) && roundNumber > 0 ? roundNumber : null
     });
   }
+  if (state.nearMiss && !prev?.nearMiss) log.nearMisses += 1;
   if (state.ad && !sameAd(prev?.ad, state.ad)) {
     log.adMoments.push({
       step,
@@ -83,7 +87,10 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
     clearEvents: [],
     combos: [],
     failPoints: [],
+    maxRound: 0,
     adMoments: [],
+    nearMisses: 0,
+    replays: 0,
     retention: null
   };
   let restarts = 0;
@@ -127,6 +134,7 @@ export async function runSession({ adapter, persona, seed, maxSteps = SAFETY_CAP
       const restarted = decision.action?.uiId === 'restart' || decision.action?.id === 'restart';
       if (restarted) {
         restarts += 1;
+        log.replays += 1;
         lastMove = null;
         mood = tickMood(persona, mood, 'reset');
       }

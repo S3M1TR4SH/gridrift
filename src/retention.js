@@ -39,7 +39,7 @@ export function noteLoss(mercy = emptyMercy(), afterLosses = 3) {
 
 export function noteSuccess(mercy = emptyMercy()) {
   return {
-    lossesInRow: 0,
+    lossesInRow: Math.max(0, Math.floor(Number(mercy.lossesInRow) || 0)),
     queued: Math.max(0, Math.floor(Number(mercy.queued) || 0))
   };
 }

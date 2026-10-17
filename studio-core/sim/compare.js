@@ -11,11 +11,20 @@ function mean(rows, pick) {
   return rows.reduce((sum, row) => sum + pick(row), 0) / rows.length;
 }
 
-function metric(byVariant, variants, pick, { integer = false } = {}) {
+function median(rows, pick) {
+  if (!rows.length) return 0;
+  const values = rows.map(pick).sort((a, b) => a - b);
+  const mid = Math.floor(values.length / 2);
+  if (values.length % 2) return values[mid];
+  return (values[mid - 1] + values[mid]) / 2;
+}
+
+function metric(byVariant, variants, pick, { integer = false, aggregate = 'mean' } = {}) {
   const baseline = variants[0].id;
+  const combine = aggregate === 'median' ? median : mean;
   const result = {};
   for (const variant of variants) {
-    const value = mean(byVariant.get(variant.id) ?? [], pick);
+    const value = combine(byVariant.get(variant.id) ?? [], pick);
     result[variant.id] = integer ? Math.round(value) : round(value);
   }
   result.delta = {};
@@ -39,6 +48,7 @@ function groupBy(sessions, key) {
 
 const PICKS = {
   meanSessionLengthMs: [(session) => session.sessionLengthMs, { integer: true }],
+  medianSessionLengthMs: [(session) => session.sessionLengthMs, { integer: true, aggregate: 'median' }],
   meanWouldReturn: [(session) => session.retention?.wouldReturn ?? 0],
   meanClears: [(session) => session.clears ?? 0],
   meanCombos: [(session) => session.combos?.length ?? 0],
@@ -74,6 +84,7 @@ export function buildReport({ variants, seeds, personas, maxSteps, sessions }) {
     sessions,
     comparison: {
       baseline: variants[0].id,
+      targetSessionMs: 60000,
       metrics: metricsFor(sessions, variants),
       byPersona
     }

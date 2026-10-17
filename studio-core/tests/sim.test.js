@@ -77,9 +77,9 @@ test('the default human policy uses the calibration file and keeps legacy select
   const casual = resolvePersona('casual');
   assert.equal(casual.placement, 'human');
   assert.equal(casual.lookahead, 1);
-  assert.equal(casual.thinkMs, 3500);
+  assert.equal(casual.thinkMs, 3000);
   assert.equal(resolvePersona('skilled').lookahead, 2);
-  assert.equal(resolvePersona('skilled').thinkMs, 2200);
+  assert.equal(resolvePersona('skilled').thinkMs, 1900);
   assert.equal(resolvePersona('quitter').blunderRate, 0.2);
   assert.equal(resolvePersona('ad-averse').lookProb, 0.8);
   const legacy = resolvePersona('casual', { placement: 'legacy' });
@@ -436,6 +436,10 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
   assert.equal(built.comparison.metrics.meanSessionLengthMs.control, 1000);
   assert.equal(built.comparison.metrics.meanSessionLengthMs.quiet, 3000);
   assert.equal(built.comparison.metrics.meanSessionLengthMs.delta.quiet, 2000);
+  assert.equal(built.comparison.metrics.medianSessionLengthMs.control, 1000);
+  assert.equal(built.comparison.metrics.medianSessionLengthMs.quiet, 3000);
+  assert.equal(built.comparison.metrics.medianSessionLengthMs.delta.quiet, 2000);
+  assert.equal(built.comparison.targetSessionMs, 60000);
   assert.equal(built.comparison.metrics.meanWouldReturn.control, 0.5);
   assert.equal(built.comparison.metrics.meanWouldReturn.quiet, 0.8);
   assert.equal(built.comparison.metrics.meanWouldReturn.delta.quiet, 0.3);
@@ -451,6 +455,8 @@ test('runComparison reuses seeds across variants and writes a summary', async ()
   assert.match(markdown, /casual/);
   assert.match(markdown, /boredom/);
   assert.match(markdown, /safety_cap/);
+  assert.match(markdown, /Median session/);
+  assert.match(markdown, /60000/);
 
   const dir = await mkdtemp(join(tmpdir(), 'sim-report-'));
   try {
