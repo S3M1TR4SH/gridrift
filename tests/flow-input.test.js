@@ -62,6 +62,7 @@ test('drag snaps to the grid and a tap selects', () => {
   const layout = computeLayout({ width: 390, height: 844, grid: 10 });
   assert.equal(layout.boardSize, layout.cell * 10);
   assert.ok(layout.canvasWidth <= 390);
+  assert.ok(layout.boardSize >= 360);
   assert.equal(hitTray(layout.cell, layout.boardSize + layout.gap + 4, layout), 0);
 
   let state = createPointerState();
@@ -92,4 +93,23 @@ test('drag snaps to the grid and a tap selects', () => {
     trayIndex: 0, overBoard: true, ghostValid: true, snapX: 1, snapY: 1, ignore: true
   });
   assert.notEqual(ignored.effect?.type, 'place');
+  assert.equal(ignored.effect.moved, false);
+});
+
+test('the first-run tutorial has three steps and welcome can resume', () => {
+  const steps = [0, 1, 2].map((step) => viewModel({ screen: 'tutorial', step }));
+  assert.equal(steps[0].stepLabel, '1 of 3');
+  assert.equal(steps[0].actions[0].label, 'Next');
+  assert.equal(steps[0].actions[0].primary, true);
+  assert.equal(steps[0].separated, false);
+  assert.match(steps[0].body, /snaps/i);
+  assert.match(steps[1].body, /row or a whole column/i);
+  assert.equal(steps[2].actions[0].label, 'Play');
+  const welcome = viewModel({ screen: 'welcome_back', bestScore: 15 });
+  assert.equal(welcome.title, 'Welcome back');
+  assert.equal(welcome.actions.find((action) => action.id === 'resume').slot, 'lower');
+  assert.equal(welcome.actions.find((action) => action.id === 'new_game').slot, 'upper');
+  assert.equal(welcome.separated, false);
+  assert.equal(viewModel({ screen: 'ad_break' }).separated, true);
+  assert.equal(viewModel({ screen: 'rewarded_confirm', kind: 'hint' }).separated, true);
 });

@@ -5,7 +5,14 @@ const TONES = {
   win: { freq: 660, duration: 0.16, type: 'triangle', gain: 0.05 },
   line_clear: { freq: 480, duration: 0.12, type: 'triangle', gain: 0.06 },
   combo: { freq: 720, duration: 0.18, type: 'square', gain: 0.05 },
-  game_over: { freq: 140, duration: 0.22, type: 'sine', gain: 0.05 }
+  game_over: { freq: 140, duration: 0.22, type: 'sine', gain: 0.05 },
+  clear: { freq: 620, duration: 0.14, type: 'triangle', gain: 0.06 },
+  invalid: { freq: 160, duration: 0.12, type: 'sawtooth', gain: 0.03 },
+  streak1: { freq: 640, duration: 0.14, type: 'square', gain: 0.045 },
+  streak2: { freq: 760, duration: 0.18, type: 'square', gain: 0.05 },
+  streak3: { freq: 920, duration: 0.24, type: 'square', gain: 0.055 },
+  step: { freq: 580, duration: 0.07, type: 'triangle', gain: 0.04 },
+  tap: { freq: 480, duration: 0.04, type: 'square', gain: 0.035 }
 };
 
 export function createAudio(registry) {

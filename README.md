@@ -2,7 +2,11 @@
 
 Gridrift is a small HTML5 canvas puzzle. Drag pieces onto the grid, clear full rows and columns, and chain a streak. The board is a 10 by 10 grid. Rounds raise a clear target, then the same board continues.
 
-Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.1.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
+Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.2.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
+
+Line clears flash, shake the board, pop the score, and play `sfx.clear`. Combos use `sfx.combo`. Streaks step through `sfx.streak.1`, `sfx.streak.2`, and `sfx.streak.3`. A bad drop plays `sfx.invalid` and snaps the piece back. Buttons use `sfx.ui.tap`, and the tutorial uses `sfx.tutorial.step`. Particle sprites are `fx.particle.1` through `fx.particle.8` (grayscale art, tinted with the cleared piece color) and the line flash is `fx.flash`. Until those files exist, the page draws circles and bars and synthesizes the tones. Timings live in `config/tuning.json` under `juice`. The reusable helper is `studio-core/juice/feedback.js`, and it does not import the game.
+
+The best score and the current run are stored in `localStorage` under `gridrift.run.v1`. That record is the board, the tray, the score, and the round. It does not store a name, age, or contact details. The age gate keeps its own separate key. The first visit explains the goal in three steps: drag a piece, fill a row or column, and finish the round. A later visit with a saved run offers to continue.
 
 ## Dev setup
 

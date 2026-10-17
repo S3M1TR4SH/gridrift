@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import pacing from '../config/pacing.json' with { type: 'json' };
 import {
   applyClears,
   canPlace,
@@ -8,9 +9,11 @@ import {
   createMatch,
   dealPieces,
   findClears,
+  findSmartHint,
   fitsAnywhere,
   hasAnyMove,
-  scorePlacement
+  scorePlacement,
+  SHAPES
 } from '../src/logic.js';
 import { mulberry32 } from '../src/rng.js';
 
@@ -39,8 +42,10 @@ test('placement, line clears, combo, and streak scoring', () => {
   assert.equal(first.gained, 14);
   assert.equal(match.state.streak, 1);
   assert.equal(match.state.board[0].every((cell) => cell === 0), true);
+  assert.equal(match.state.pieces[0], null);
+  assert.equal(match.state.pieces[1].shapeName, 'line4');
 
-  const second = match.place(0, 0, 0);
+  const second = match.place(1, 0, 0);
   assert.equal(second.lines, 1);
   assert.equal(second.gained, 19);
   assert.equal(match.state.streak, 2);
@@ -139,6 +144,113 @@ test('clearing the target ends the round before a lockout', () => {
   const result = match.place(0, 0, 0);
   assert.equal(result.roundComplete, true);
   assert.equal(match.state.phase, 'round_complete');
+});
+
+test('tray slots stay put until every slot is empty', () => {
+  const match = createMatch({
+    grid: 6,
+    traySize: 3,
+    score,
+    rng: () => 0,
+    targetClears: 99,
+    poolFor: () => ['dot', 'line2', 'square'],
+    palette
+  });
+  const kept = match.state.pieces[1].shapeName;
+  assert.equal(match.place(0, 0, 0).ok, true);
+  assert.equal(match.state.pieces.length, 3);
+  assert.equal(match.state.pieces[0], null);
+  assert.equal(match.state.pieces[1].shapeName, kept);
+  assert.ok(match.state.pieces[2]);
+});
+
+test('the shape catalog has 15 or more placeable shapes', () => {
+  const names = Object.keys(SHAPES);
+  assert.ok(names.length >= 15);
+  const board = createBoard(10);
+  const seen = new Set();
+  for (const pool of pacing.difficulty.pools) {
+    for (const name of pool.shapes) {
+      assert.ok(SHAPES[name], name);
+      seen.add(name);
+    }
+  }
+  assert.ok(seen.size >= 15);
+  for (const name of names) {
+    const shape = SHAPES[name];
+    assert.ok(shape.length > 0);
+    for (const row of shape) {
+      assert.equal(row.length, shape[0].length);
+      for (const cell of row) assert.ok(cell === 0 || cell === 1);
+    }
+    assert.equal(fitsAnywhere(board, shape), true, name);
+  }
+  const dealt = dealPieces({
+    board,
+    pool: names,
+    count: 3,
+    rng: mulberry32(4),
+    palette
+  });
+  assert.equal(dealt.pieces.length, 3);
+  for (const piece of dealt.pieces) assert.ok(names.includes(piece.shapeName));
+});
+
+test('the hint prefers a line clear over the top-left cell', () => {
+  const board = createBoard(4);
+  board[0] = ['#fff', '#fff', '#fff', 0];
+  const hint = findSmartHint(board, SHAPES.dot);
+  assert.deepEqual({ x: hint.x, y: hint.y }, { x: 3, y: 0 });
+  assert.ok(hint.value >= 1000);
+
+  const empty = findSmartHint(createBoard(4), SHAPES.dot);
+  assert.equal(empty.x === 0 && empty.y === 0, false);
+
+  const match = createMatch({
+    grid: 4,
+    traySize: 1,
+    score,
+    rng: () => 0,
+    targetClears: 99,
+    poolFor: () => ['dot'],
+    palette
+  });
+  const shown = match.showHint();
+  assert.equal(shown.label, 'Fits here');
+  assert.equal(shown.x === 0 && shown.y === 0, false);
+});
+
+test('a saved run restores score and stable tray slots', () => {
+  const match = createMatch({
+    grid: 6,
+    traySize: 3,
+    score,
+    rng: () => 0,
+    targetClears: 4,
+    poolFor: () => ['dot'],
+    palette,
+    saved: {
+      board: createBoard(6),
+      pieces: [
+        { shapeName: 'line2', color: '#ffffff', tileId: 'tile.blue' },
+        null,
+        { shapeName: 'dot', color: '#ffffff', tileId: 'tile.red' }
+      ],
+      score: 9,
+      streak: 1,
+      bestStreak: 3,
+      roundClears: 1,
+      totalClears: 2,
+      targetClears: 6,
+      phase: 'playing'
+    }
+  });
+  assert.equal(match.state.score, 9);
+  assert.equal(match.state.targetClears, 6);
+  assert.equal(match.state.pieces[0].shapeName, 'line2');
+  assert.equal(match.state.pieces[1], null);
+  assert.equal(match.place(0, 0, 0).ok, true);
+  assert.equal(match.state.pieces[2].shapeName, 'dot');
 });
 
 test('continue opens the fullest rows', () => {

@@ -10,6 +10,7 @@ import {
   memoryStorage
 } from '../studio-core/consent/age-gate.js';
 import { validateGameConfig, validateTuning } from '../studio-core/guardrails/validate.js';
+import { celebrationLevel, createFeedback } from '../studio-core/juice/feedback.js';
 import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
 import { createInstallController } from '../studio-core/pwa/install.js';
 import { loadAssets } from './assets.js';
@@ -24,11 +25,12 @@ import {
   viewModel
 } from './flow.js';
 import { createPointerState, pointerReducer } from './input.js';
-import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin } from './layout.js';
+import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { canPlace, createMatch } from './logic.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
+import { createSaveStore } from './save.js';
 import { createUi } from './ui.js';
 
 const FALLBACK_TUNING = {
@@ -71,10 +73,15 @@ function start() {
   document.documentElement.style.setProperty('--accent', registry.get('ui.button_rectangle_flat.blue').color);
   document.body.style.fontFamily = registry.get('font.kenney-future').family;
 
-  const consentStore = createConsentStore(bootStorage());
+  const storage = bootStorage();
+  const saveStore = createSaveStore(storage);
+  let progress = saveStore.load();
+  if (progress.run && progress.run.board.length !== tuning.grid) progress = { ...progress, run: null };
+  const consentStore = createConsentStore(storage);
   let consent = consentStore.load();
   const tracker = createTracker({ getConsent: () => consent });
   const pacer = createPacer({ pacing, isChild: () => Boolean(consent?.isChild) });
+  const feedback = createFeedback({ config: tuning.juice, now: () => performance.now() });
   const audio = createAudio(registry);
   const install = createInstallController();
   const ui = createUi(document);
@@ -88,9 +95,10 @@ function start() {
     height: window.innerHeight,
     grid: tuning.grid
   });
-  let levelIndex = 0;
-  let continueUses = 0;
+  let levelIndex = progress.run?.levelIndex || 0;
+  let continueUses = progress.run?.continueUses || 0;
   let pointer = createPointerState();
+  let pointerKind = 'mouse';
   let ignoreUntil = 0;
   let overlay = null;
   let rewardKind = null;
@@ -102,19 +110,20 @@ function start() {
     return LEVELS[id] ?? LEVELS['round-01'];
   }
 
-  function makeMatch() {
+  function makeMatch(saved) {
     return createMatch({
       grid: tuning.grid,
       traySize: tuning.traySize,
       score: tuning.score,
       rng: mulberry32((Date.now() ^ (levelIndex + 1) * 997) >>> 0),
-      targetClears: level().targetClears,
+      targetClears: saved?.targetClears || level().targetClears,
       poolFor: (clears) => pacer.shapePool(clears),
-      palette
+      palette,
+      saved
     });
   }
 
-  let match = makeMatch();
+  let match = makeMatch(progress.run);
 
   function screen() {
     if (!consent) return 'age_gate';
@@ -139,10 +148,51 @@ function start() {
     publishOverlay(true);
   }
 
+  function tap() {
+    audio.play(feedback.config.sounds.tap);
+  }
+
+  function persist() {
+    const state = match.state;
+    progress = saveStore.save({
+      bestScore: Math.max(progress.bestScore || 0, state.score),
+      tutorialSeen: progress.tutorialSeen === true,
+      run: {
+        board: state.board,
+        pieces: state.pieces.map((piece) => (piece ? {
+          shapeName: piece.shapeName,
+          color: piece.color,
+          tileId: piece.tileId
+        } : null)),
+        score: state.score,
+        streak: state.streak,
+        bestStreak: state.bestStreak,
+        roundClears: state.roundClears,
+        totalClears: state.totalClears,
+        targetClears: state.targetClears,
+        levelIndex,
+        continueUses,
+        phase: state.phase
+      }
+    });
+  }
+
+  function openEntry() {
+    if (progress.run) overlay = { screen: 'welcome_back' };
+    else if (!progress.tutorialSeen) overlay = { screen: 'tutorial', step: 0 };
+    else overlay = null;
+    publishOverlay(true);
+  }
+
+  function playSounds(ids) {
+    for (const id of ids) audio.play(id);
+  }
+
   function finishRound() {
     pacer.recordRoundEnded();
     tracker.track('round_complete', { score: match.state.score, round: level().id });
     audio.play('sfx.win');
+    persist();
     show({ screen: 'round_complete' });
   }
 
@@ -157,6 +207,7 @@ function start() {
       rewardedAllowed,
       continueUsed: !canOfferContinue(continueUses, true)
     });
+    persist();
     if (plan === 'ad_then_results') {
       pacer.recordAd('interstitial');
       tracker.track('ad_break_shown', { break: 'game_over' });
@@ -172,7 +223,8 @@ function start() {
     overlay = null;
     armIgnore();
     tracker.track('round_start', { round: level().id });
-    audio.play('sfx.click');
+    tap();
+    persist();
     if (match.state.phase === 'game_over') finishGame();
   }
 
@@ -185,7 +237,8 @@ function start() {
     pointer = createPointerState();
     armIgnore();
     tracker.track('restart', {});
-    audio.play('sfx.click');
+    tap();
+    persist();
   }
 
   function grantReward() {
@@ -195,15 +248,34 @@ function start() {
     if (rewardKind === 'hint') {
       match.showHint();
       overlay = null;
-      audio.play('sfx.click');
+      tap();
     } else {
       continueUses += 1;
       const outcome = match.continueRun(rowsForContinue(tuning.continueClears));
       overlay = null;
-      audio.play('sfx.line_clear');
+      audio.play('sfx.clear');
       if (outcome.gameOver) finishGame();
     }
     rewardKind = null;
+    persist();
+  }
+
+  function resumeRun() {
+    tap();
+    if (match.state.phase === 'game_over') {
+      show({
+        screen: 'game_over',
+        rewarded: pacer.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+      });
+      return;
+    }
+    if (match.state.phase === 'round_complete') {
+      show({ screen: 'round_complete' });
+      return;
+    }
+    overlay = null;
+    armIgnore();
+    publishOverlay(true);
   }
 
   function onAction(id) {
@@ -220,26 +292,67 @@ function start() {
     }
     if (id === 'age_under') {
       consent = consentStore.save(evaluateAgeGate({ band: 'under13' }));
+      tap();
       show({ screen: 'kid_mode' });
       return;
     }
     if (id === 'age_13') {
       consent = consentStore.save(evaluateAgeGate({ band: '13plus' }));
+      tap();
       overlay = null;
-      publishOverlay(true);
+      if (consent.needsAnalyticsPrompt) {
+        publishOverlay(true);
+        return;
+      }
+      openEntry();
       return;
     }
     if (id === 'analytics_yes' || id === 'analytics_no') {
       const choice = id === 'analytics_yes' ? 'granted' : 'denied';
       consent = consentStore.save(applyAnalyticsChoice(consent, choice));
-      overlay = null;
+      tap();
       tracker.track('consent_updated', { granted: choice === 'granted' });
-      publishOverlay(true);
+      openEntry();
       return;
     }
     if (id === 'start_play') {
+      tap();
+      openEntry();
+      return;
+    }
+    if (id === 'tutorial_next') {
+      const step = (overlay?.step ?? 0) + 1;
+      audio.play(feedback.config.sounds.tutorial);
+      if (step < 3) {
+        overlay = { screen: 'tutorial', step };
+        publishOverlay(true);
+        return;
+      }
+      progress = { ...progress, tutorialSeen: true };
       overlay = null;
-      publishOverlay(true);
+      armIgnore();
+      persist();
+      return;
+    }
+    if (id === 'resume') {
+      resumeRun();
+      return;
+    }
+    if (id === 'new_game') {
+      levelIndex = 0;
+      continueUses = 0;
+      rewardKind = null;
+      match = makeMatch();
+      pointer = createPointerState();
+      tap();
+      if (!progress.tutorialSeen) {
+        overlay = { screen: 'tutorial', step: 0 };
+        publishOverlay(true);
+        return;
+      }
+      overlay = null;
+      armIgnore();
+      persist();
       return;
     }
     if (id === 'close_ad') {
@@ -247,7 +360,10 @@ function start() {
       tracker.track('ad_break_closed', { break: after === 'game_over' ? 'game_over' : 'between_rounds' });
       armIgnore();
       if (after === 'next_round') startNextRound();
-      else show({ screen: 'game_over', rewarded: false });
+      else {
+        tap();
+        show({ screen: 'game_over', rewarded: false });
+      }
       return;
     }
     if (id === 'next_round') {
@@ -270,11 +386,13 @@ function start() {
       if (!pacer.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
+      tap();
       show({ screen: 'rewarded_confirm', kind });
       return;
     }
     if (id === 'decline') {
       tracker.track('rewarded_declined', { kind: rewardKind || 'continue' });
+      tap();
       const backToResults = match.state.phase === 'game_over';
       rewardKind = null;
       if (backToResults) {
@@ -290,6 +408,7 @@ function start() {
     }
     if (id === 'watch') {
       tracker.track('rewarded_accepted', { kind: rewardKind || 'continue' });
+      tap();
       show({ screen: 'rewarded_play', kind: rewardKind });
       return;
     }
@@ -307,7 +426,9 @@ function start() {
       screen: name,
       rewarded: Boolean(overlay?.rewarded),
       kind: overlay?.kind || rewardKind,
+      step: overlay?.step || 0,
       score: state.score,
+      bestScore: Math.max(progress.bestScore || 0, state.score),
       bestStreak: state.bestStreak,
       roundName: level().name
     });
@@ -341,8 +462,15 @@ function start() {
     );
   }
 
+  function liftPx() {
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    if (coarse || pointerKind === 'touch') return feedback.config.dragLiftPx;
+    return 0;
+  }
+
   function hitAt(point, piece) {
     const overBoard = point.x >= 0 && point.y >= 0 && point.x < layout.boardSize && point.y < layout.boardSize;
+    const trayIndex = hitTray(point.x, point.y, layout);
     let snapX = 0;
     let snapY = 0;
     let ghostValid = false;
@@ -353,7 +481,8 @@ function start() {
       ghostValid = canPlace(match.state.board, piece.shape, snapX, snapY);
     }
     return {
-      trayIndex: hitTray(point.x, point.y, layout),
+      trayIndex,
+      trayFilled: trayIndex >= 0 && Boolean(match.state.pieces[trayIndex]),
       overBoard,
       snapX,
       snapY,
@@ -363,6 +492,7 @@ function start() {
   }
 
   function onPointer(type, event) {
+    pointerKind = event.pointerType || pointerKind;
     const point = pointFrom(event);
     const previewPiece = pointer.drag
       ? match.state.pieces[pointer.drag.index]
@@ -376,22 +506,56 @@ function start() {
     }, hit);
     pointer = reduced.state;
     if (!reduced.effect || reduced.effect.type === 'select' || reduced.effect.type === 'cancel') {
-      if (reduced.effect?.type === 'cancel') audio.play('sfx.error');
+      if (reduced.effect?.type === 'cancel' && reduced.effect.moved && Number.isInteger(reduced.effect.index)) {
+        const piece = match.state.pieces[reduced.effect.index];
+        const slot = traySlots(layout)[reduced.effect.index];
+        const burst = feedback.invalid({
+          index: reduced.effect.index,
+          fromX: point.x,
+          fromY: point.y - liftPx(),
+          toX: slot ? slot.x + slot.w / 2 : point.x,
+          toY: slot ? slot.y + slot.h / 2 : point.y,
+          piece
+        });
+        playSounds(burst.sounds);
+      }
       return;
     }
     if (reduced.effect.type === 'place') {
       const result = match.place(reduced.effect.index, reduced.effect.x, reduced.effect.y);
       if (!result.ok) {
-        audio.play('sfx.error');
+        const piece = match.state.pieces[reduced.effect.index];
+        const slot = traySlots(layout)[reduced.effect.index];
+        const burst = feedback.invalid({
+          index: reduced.effect.index,
+          fromX: point.x,
+          fromY: point.y - liftPx(),
+          toX: slot ? slot.x + slot.w / 2 : point.x,
+          toY: slot ? slot.y + slot.h / 2 : point.y,
+          piece
+        });
+        playSounds(burst.sounds);
         return;
       }
       audio.play('sfx.place');
       tracker.track('piece_placed', { cells: result.gained, x: reduced.effect.x, y: reduced.effect.y });
       if (result.lines > 0) {
-        audio.play(result.combo >= 2 ? 'sfx.combo' : 'sfx.line_clear');
+        const burst = feedback.clear({
+          rows: result.rows,
+          cols: result.cols,
+          cell: layout.cell,
+          grid: tuning.grid,
+          color: result.color,
+          points: result.gained,
+          streak: match.state.streak,
+          popupX: (reduced.effect.x + 0.5) * layout.cell,
+          popupY: (reduced.effect.y + 0.5) * layout.cell
+        });
+        playSounds(burst.sounds);
         tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
         if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
       }
+      persist();
       if (result.roundComplete) finishRound();
       else if (result.gameOver) finishGame();
     }
@@ -420,8 +584,16 @@ function start() {
     navigator.serviceWorker.register('./sw.js', { type: 'module' }).catch(() => {});
   }
 
+  function hintMode() {
+    if (screen() !== 'play' || consent?.isChild) return 'off';
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return 'off';
+    return pacer.canOfferRewarded('hint') ? 'ready' : 'soon';
+  }
+
   function frame() {
     const state = match.state;
+    const fx = feedback.sample(performance.now());
     let ghost = null;
     let drag = null;
     const active = pointer.drag ? state.pieces[pointer.drag.index] : null;
@@ -438,9 +610,14 @@ function start() {
           color: active.color,
           valid: canPlace(state.board, active.shape, snap.x, snap.y)
         };
-      } else {
-        drag = { x: pointer.drag.x, y: pointer.drag.y, index: pointer.drag.index, piece: active };
       }
+      drag = {
+        x: pointer.drag.x,
+        y: pointer.drag.y,
+        index: pointer.drag.index,
+        piece: active,
+        lift: liftPx()
+      };
     }
     drawScene(ctx, {
       layout,
@@ -450,16 +627,25 @@ function start() {
       drag,
       ghost,
       hint: state.hint,
-      selected: pointer.selected
+      selected: pointer.selected,
+      juice: fx
     });
+    const steps = feedback.config.streakSteps;
+    const meterMax = steps[steps.length - 1] || 6;
     ui.setHud({
       score: state.score,
+      best: Math.max(progress.bestScore || 0, state.score),
       streak: state.streak,
       combo: state.combo,
       round: level().name,
       clears: state.roundClears,
       target: state.targetClears,
-      hint: screen() === 'play' && !consent?.isChild && pacer.canOfferRewarded('hint'),
+      goal: 'Fill a row or column',
+      meter: Math.max(0, Math.min(1, state.streak / meterMax)),
+      meterMax,
+      celebrate: celebrationLevel(state.streak, steps),
+      hintNote: state.hint?.label || '',
+      hint: hintMode(),
       install: install.available && screen() === 'play',
       muted: audio.muted
     });
@@ -468,7 +654,8 @@ function start() {
   }
 
   measure();
-  publishOverlay(true);
+  if (consent && !consent.needsAnalyticsPrompt) openEntry();
+  else publishOverlay(true);
   requestAnimationFrame(frame);
 }
 

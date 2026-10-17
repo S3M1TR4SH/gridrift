@@ -1,9 +1,11 @@
 export const SHAPES = {
   dot: [[1]],
   line2: [[1, 1]],
+  line2v: [[1], [1]],
   line3: [[1, 1, 1]],
   line3v: [[1], [1], [1]],
   line4: [[1, 1, 1, 1]],
+  line4v: [[1], [1], [1], [1]],
   line5: [[1, 1, 1, 1, 1]],
   square: [[1, 1], [1, 1]],
   s: [[1, 1, 0], [0, 1, 1]],
@@ -11,7 +13,13 @@ export const SHAPES = {
   l: [[1, 0], [1, 0], [1, 1]],
   j: [[0, 1], [0, 1], [1, 1]],
   t: [[1, 1, 1], [0, 1, 0]],
-  corner: [[1, 1], [1, 0]]
+  corner: [[1, 1], [1, 0]],
+  plus: [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+  u: [[1, 0, 1], [1, 1, 1]],
+  rect: [[1, 1, 1], [1, 1, 1]],
+  corner3: [[1, 1, 1], [1, 0, 0], [1, 0, 0]],
+  sTall: [[1, 0], [1, 1], [0, 1]],
+  zTall: [[0, 1], [1, 1], [1, 0]]
 };
 
 const SAFE_SHAPES = ['dot', 'line2', 'square'];
@@ -78,16 +86,43 @@ export function fitsAnywhere(board, shape) {
 }
 
 export function hasAnyMove(board, pieces) {
-  return pieces.some((piece) => fitsAnywhere(board, piece.shape));
+  return pieces.some((piece) => piece && fitsAnywhere(board, piece.shape));
+}
+
+export function placementValue(board, shape, x, y) {
+  if (!canPlace(board, shape, x, y)) return Number.NEGATIVE_INFINITY;
+  const painted = paint(board, shape, x, y, 1);
+  const found = findClears(painted);
+  const lines = found.rows.length + found.cols.length;
+  let contact = 0;
+  shape.forEach((row, dy) => row.forEach((cell, dx) => {
+    if (!cell) return;
+    const neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [ox, oy] of neighbors) {
+      const cx = x + dx + ox;
+      const cy = y + dy + oy;
+      if (cy >= 0 && cx >= 0 && cy < board.length && cx < board[0].length && board[cy][cx]) contact += 1;
+    }
+  }));
+  const corner = x === 0 && y === 0 ? 1 : 0;
+  return lines * 1000 + contact * 2 - corner;
+}
+
+export function findSmartHint(board, shape) {
+  let best = null;
+  for (let y = 0; y <= board.length - shape.length; y += 1) {
+    for (let x = 0; x <= board[0].length - shape[0].length; x += 1) {
+      const value = placementValue(board, shape, x, y);
+      if (!Number.isFinite(value)) continue;
+      if (!best || value > best.value) best = { x, y, value };
+    }
+  }
+  return best;
 }
 
 export function findHint(board, shape) {
-  for (let y = 0; y <= board.length - shape.length; y += 1) {
-    for (let x = 0; x <= board[0].length - shape[0].length; x += 1) {
-      if (canPlace(board, shape, x, y)) return { x, y };
-    }
-  }
-  return null;
+  const spot = findSmartHint(board, shape);
+  return spot ? { x: spot.x, y: spot.y } : null;
 }
 
 export function scorePlacement({ cells, lines, streak, tuning }) {
@@ -133,6 +168,20 @@ export function dealPieces({ board, pool, count, rng, palette }) {
   return { pieces, gameOver: false };
 }
 
+function hydratePiece(piece) {
+  if (!piece || typeof piece.shapeName !== 'string' || !SHAPES[piece.shapeName]) return null;
+  return {
+    shapeName: piece.shapeName,
+    shape: SHAPES[piece.shapeName],
+    color: typeof piece.color === 'string' ? piece.color : '#8b95a8',
+    tileId: typeof piece.tileId === 'string' ? piece.tileId : 'tile.grey'
+  };
+}
+
+function emptySlots(traySize) {
+  return Array.from({ length: traySize }, () => null);
+}
+
 export function createMatch({
   grid = 10,
   traySize = 3,
@@ -140,10 +189,11 @@ export function createMatch({
   rng = Math.random,
   targetClears = 4,
   poolFor = () => SAFE_SHAPES,
-  palette = []
+  palette = [],
+  saved = null
 }) {
   let board = createBoard(grid);
-  let pieces = [];
+  let pieces = emptySlots(traySize);
   let points = 0;
   let streak = 0;
   let bestStreak = 0;
@@ -165,7 +215,26 @@ export function createMatch({
     if (dealt.gameOver || !hasAnyMove(board, pieces)) phase = 'game_over';
   }
 
-  deal();
+  function trayIsEmpty() {
+    return pieces.every((piece) => !piece);
+  }
+
+  if (saved && Array.isArray(saved.board) && saved.board.length === grid && saved.board.every((row) => row.length === grid)) {
+    board = saved.board.map((row) => row.slice());
+    points = Number(saved.score) || 0;
+    streak = Number(saved.streak) || 0;
+    bestStreak = Number(saved.bestStreak) || 0;
+    roundClears = Number(saved.roundClears) || 0;
+    totalClears = Number(saved.totalClears) || 0;
+    if (saved.targetClears) targetClears = saved.targetClears;
+    phase = saved.phase === 'round_complete' || saved.phase === 'game_over' ? saved.phase : 'playing';
+    const incoming = Array.isArray(saved.pieces) ? saved.pieces : [];
+    pieces = emptySlots(traySize).map((_, index) => hydratePiece(incoming[index]));
+    if (phase === 'playing' && trayIsEmpty()) deal();
+    else if (phase === 'playing' && !hasAnyMove(board, pieces)) phase = 'game_over';
+  } else {
+    deal();
+  }
 
   function snapshot() {
     return {
@@ -184,6 +253,20 @@ export function createMatch({
     };
   }
 
+  function placed(gained, lines, found, color, roundComplete) {
+    return {
+      ok: true,
+      gained,
+      lines,
+      combo,
+      rows: found.rows,
+      cols: found.cols,
+      color,
+      roundComplete,
+      gameOver: phase === 'game_over'
+    };
+  }
+
   return {
     get state() {
       return snapshot();
@@ -193,7 +276,8 @@ export function createMatch({
       const piece = pieces[index];
       if (!piece) return { ok: false, reason: 'no_piece' };
       if (!canPlace(board, piece.shape, x, y)) return { ok: false, reason: 'blocked' };
-      board = paint(board, piece.shape, x, y, piece.color);
+      const color = piece.color;
+      board = paint(board, piece.shape, x, y, color);
       const found = findClears(board);
       const lines = found.rows.length + found.cols.length;
       board = applyClears(board, found);
@@ -210,14 +294,15 @@ export function createMatch({
       roundClears += lines;
       totalClears += lines;
       hint = null;
-      pieces = pieces.filter((_, pieceIndex) => pieceIndex !== index);
+      pieces = pieces.slice();
+      pieces[index] = null;
       if (roundClears >= targetClears) {
         phase = 'round_complete';
-        return { ok: true, gained, lines, combo, roundComplete: true, gameOver: false };
+        return placed(gained, lines, found, color, true);
       }
-      if (pieces.length === 0) deal();
+      if (trayIsEmpty()) deal();
       else if (!hasAnyMove(board, pieces)) phase = 'game_over';
-      return { ok: true, gained, lines, combo, roundComplete: false, gameOver: phase === 'game_over' };
+      return placed(gained, lines, found, color, false);
     },
     continueRun(rows) {
       board = clearFullestRows(board, rows);
@@ -229,10 +314,23 @@ export function createMatch({
       return { gameOver: phase === 'game_over', score: points };
     },
     showHint() {
-      const piece = pieces.find((candidate) => fitsAnywhere(board, candidate.shape)) ?? pieces[0];
-      if (!piece) return null;
-      hint = { tileId: piece.tileId, color: piece.color, shape: piece.shape, ...findHint(board, piece.shape) };
-      if (hint.x == null) hint = null;
+      let best = null;
+      for (const piece of pieces) {
+        if (!piece) continue;
+        const spot = findSmartHint(board, piece.shape);
+        if (!spot) continue;
+        if (!best || spot.value > best.value) {
+          best = {
+            tileId: piece.tileId,
+            color: piece.color,
+            shape: piece.shape,
+            x: spot.x,
+            y: spot.y,
+            label: spot.value >= 1000 ? 'Clears a line' : 'Fits here'
+          };
+        }
+      }
+      hint = best;
       return hint;
     },
     restart(nextTarget = targetClears) {
@@ -255,7 +353,7 @@ export function createMatch({
       hint = null;
       targetClears = nextTarget;
       phase = 'playing';
-      if (pieces.length === 0 || !hasAnyMove(board, pieces)) deal();
+      if (trayIsEmpty() || !hasAnyMove(board, pieces)) deal();
       return snapshot();
     }
   };

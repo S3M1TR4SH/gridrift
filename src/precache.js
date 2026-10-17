@@ -1,4 +1,4 @@
-export const CACHE_NAME = 'gridrift-0.1.0';
+export const CACHE_NAME = 'gridrift-0.1.1';
 
 export const PRECACHE_URLS = [
   './',
@@ -18,7 +18,9 @@ export const PRECACHE_URLS = [
   './src/levels.js',
   './src/rng.js',
   './src/precache.js',
+  './src/save.js',
   './src/styles.css',
+  './studio-core/juice/feedback.js',
   './studio-core/guardrails/limits.js',
   './studio-core/guardrails/validate.js',
   './studio-core/pacing/pacer.js',

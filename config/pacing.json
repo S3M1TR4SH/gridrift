@@ -25,9 +25,9 @@
     "rampEveryClears": 4,
     "maxTier": 5,
     "pools": [
-      { "minTier": 0, "shapes": ["dot", "line2", "line3", "square", "corner"] },
-      { "minTier": 2, "shapes": ["line3", "line3v", "square", "s", "l", "corner"] },
-      { "minTier": 4, "shapes": ["line4", "s", "z", "l", "j", "t", "corner"] }
+      { "minTier": 0, "shapes": ["dot", "line2", "line2v", "line3", "line3v", "square", "corner"] },
+      { "minTier": 2, "shapes": ["line3", "line3v", "square", "s", "z", "l", "j", "t", "corner", "rect", "u", "plus", "sTall", "zTall"] },
+      { "minTier": 4, "shapes": ["line4", "line4v", "line5", "s", "z", "l", "j", "t", "plus", "u", "rect", "corner3", "sTall", "zTall"] }
     ]
   },
   "privacy": {
