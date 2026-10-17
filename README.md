@@ -43,7 +43,7 @@ Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Promp
    npm run test:guardrails
    ```
 
-   Those tests do three things. They lock the hard limits in `studio-core/guardrails/limits.js`. They load an over-limit sample and require validation to fail. They load the shipped `config/pacing.json` and `config/tuning.json` and require validation to pass. If a number in those files is past a limit, this command exits with an error and names the rule.
+   Those tests do four things. They lock the hard limits in `studio-core/guardrails/limits.js`. They load an over-limit sample and require validation to fail. They load the shipped `config/pacing.json` and `config/tuning.json` and require validation to pass. They run every ad adapter through the guard, including the portal stubs. If a number in those files is past a limit, this command exits with an error and names the rule.
 
 `npm run build` copies the static site into `dist/` and refuses to write it when the shipped config fails the same guardrail check. Preview that folder with `npm start -- dist` only after a successful build. Day-to-day edits are easier with `npm start` on the project root, since you do not need to rebuild to refresh.
 
@@ -57,7 +57,7 @@ Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Promp
 
 ## Ads, privacy, and stats
 
-Ads are placeholder hooks. There is no ad SDK, no key, and no ad request. A full-screen placeholder can appear between rounds or, when a continue offer is not available, after a game over. The close control sits away from the button that opened it. Rewarded continue and hint ads are opt-in, and declining them always returns to a playable choice. Restart is always available.
+Ads go through `studio-core/ads/guard.js`. The default adapter is a local placeholder: no SDK, no key, and no ad request. Stub folders for Poki, CrazyGames, GameDistribution, and Playgama are documented there and are not loaded. A full-screen placeholder can appear between rounds or, when a continue offer is not available, after a game over. The close control sits away from the button that opened it. Rewarded continue and hint ads are opt-in, and declining them always returns to a playable choice. Restart is always available. Notes on portal payouts live in `studio-core/docs/revenue-requirements.md` and are not used at runtime.
 
 The age gate treats players under 13 as children: no ads and no analytics. Everyone else sees an opt-in for on-device stats. Until that opt-in, events are dropped. The tracker has no send path.
 

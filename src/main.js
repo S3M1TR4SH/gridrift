@@ -11,6 +11,7 @@ import {
 } from '../studio-core/consent/age-gate.js';
 import { validateGameConfig, validateTuning } from '../studio-core/guardrails/validate.js';
 import { celebrationLevel, createFeedback } from '../studio-core/juice/feedback.js';
+import { createGuardedAds } from '../studio-core/ads/guard.js';
 import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
 import { createInstallController } from '../studio-core/pwa/install.js';
 import { loadAssets } from './assets.js';
@@ -81,6 +82,7 @@ function start() {
   let consent = consentStore.load();
   const tracker = createTracker({ getConsent: () => consent });
   const pacer = createPacer({ pacing, isChild: () => Boolean(consent?.isChild) });
+  const ads = createGuardedAds({ pacer });
   const feedback = createFeedback({ config: tuning.juice, now: () => performance.now() });
   const audio = createAudio(registry);
   const install = createInstallController();
@@ -200,19 +202,21 @@ function start() {
     pacer.recordRoundEnded();
     tracker.track('game_over', { score: match.state.score });
     audio.play('sfx.game_over');
-    const rewardedAllowed = pacer.canOfferRewarded('continue');
+    const rewardedAllowed = ads.canOfferRewarded('continue');
     const plan = planBreak({
       type: 'game_over',
-      interstitialAllowed: pacer.canShowInterstitial('game_over'),
+      interstitialAllowed: ads.canShowInterstitial('game_over'),
       rewardedAllowed,
       continueUsed: !canOfferContinue(continueUses, true)
     });
     persist();
     if (plan === 'ad_then_results') {
-      pacer.recordAd('interstitial');
-      tracker.track('ad_break_shown', { break: 'game_over' });
-      show({ screen: 'ad_break', after: 'game_over' });
-      return;
+      const result = ads.showInterstitial({ breakType: 'game_over' });
+      if (result.shown) {
+        tracker.track('ad_break_shown', { break: 'game_over' });
+        show({ screen: 'ad_break', after: 'game_over' });
+        return;
+      }
     }
     show({ screen: 'game_over', rewarded: plan === 'results_with_rewarded' });
   }
@@ -242,8 +246,15 @@ function start() {
   }
 
   function grantReward() {
-    pacer.recordAd('rewarded');
-    tracker.track('rewarded_completed', { kind: rewardKind || 'continue' });
+    const kind = rewardKind || 'continue';
+    const result = ads.showRewarded({ placement: kind, optedIn: true });
+    if (!result.rewarded) {
+      rewardKind = null;
+      overlay = null;
+      armIgnore();
+      return;
+    }
+    tracker.track('rewarded_completed', { kind });
     armIgnore();
     if (rewardKind === 'hint') {
       match.showHint();
@@ -265,7 +276,7 @@ function start() {
     if (match.state.phase === 'game_over') {
       show({
         screen: 'game_over',
-        rewarded: pacer.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+        rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
       });
       return;
     }
@@ -368,12 +379,14 @@ function start() {
     }
     if (id === 'next_round') {
       const advance = planRoundAdvance({
-        interstitialAllowed: pacer.canShowInterstitial('between_rounds')
+        interstitialAllowed: ads.canShowInterstitial('between_rounds')
       });
       if (advance === 'ad_then_next') {
-        pacer.recordAd('interstitial');
-        tracker.track('ad_break_shown', { break: 'between_rounds' });
-        show({ screen: 'ad_break', after: 'next_round' });
+        const result = ads.showInterstitial({ breakType: 'between_rounds' });
+        if (result.shown) {
+          tracker.track('ad_break_shown', { break: 'between_rounds' });
+          show({ screen: 'ad_break', after: 'next_round' });
+        } else startNextRound();
       } else startNextRound();
       return;
     }
@@ -383,7 +396,7 @@ function start() {
     }
     if (id === 'offer_continue' || id === 'offer_hint') {
       const kind = id === 'offer_hint' ? 'hint' : 'continue';
-      if (!pacer.canOfferRewarded(kind)) return;
+      if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
       tap();
@@ -398,7 +411,7 @@ function start() {
       if (backToResults) {
         show({
           screen: 'game_over',
-          rewarded: pacer.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
+          rewarded: ads.canOfferRewarded('continue') && canOfferContinue(continueUses, true)
         });
       } else {
         overlay = null;
@@ -588,7 +601,7 @@ function start() {
     if (screen() !== 'play' || consent?.isChild) return 'off';
     const rewarded = pacing.ads?.rewarded;
     if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return 'off';
-    return pacer.canOfferRewarded('hint') ? 'ready' : 'soon';
+    return ads.canOfferRewarded('hint') ? 'ready' : 'soon';
   }
 
   function frame() {

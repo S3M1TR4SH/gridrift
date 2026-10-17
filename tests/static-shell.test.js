@@ -49,6 +49,12 @@ test('precache covers the runtime module graph and placeholder icons', () => {
     assert.equal(cached.has(file), true, file);
     assert.equal(existsSync(join(root, file)), true, file);
   }
+  const main = readFileSync(join(root, 'src/main.js'), 'utf8');
+  assert.match(main, /createGuardedAds/);
+  assert.equal(main.includes('ads/poki'), false);
+  assert.equal(main.includes('ads/crazygames'), false);
+  assert.equal(main.includes('ads/gamedistribution'), false);
+  assert.equal(main.includes('ads/playgama'), false);
   const html = readFileSync(join(root, 'index.html'), 'utf8');
   assert.equal(html.includes('id="ad"'), false);
   assert.match(html, /rel="manifest"/);

@@ -12,6 +12,7 @@ This folder is self-contained. It must not import game code, asset libraries, ad
 - [ ] Analytics events use `analytics/schema.js` only. The tracker drops events until consent, and `transmit()` does not perform network I/O.
 - [ ] Age gate treats under-13 players as children: no ads, no analytics, and stored consent cannot turn those on.
 - [ ] Rewarded placements stay opt-in (`continue` and `hint` only). Interstitials stay on `game_over` and `between_rounds`.
+- [ ] Ads go through `ads/guard.js`. The default adapter is `ads/placeholder.js`. Portal folders stay stubs and do not load an SDK.
 - [ ] PWA helpers do not fetch third-party URLs. The host supplies same-origin precache URLs and generated icons.
 - [ ] No ad SDK, API key, tracking URL, or absolute `http(s)` endpoint was added.
 
