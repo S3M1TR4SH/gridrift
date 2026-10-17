@@ -4,9 +4,13 @@ import { createMatch } from '../src/logic.js';
 import { mulberry32 } from '../src/rng.js';
 import {
   completeDaily,
+  dailyObjective,
   dateSeed,
   earnFreeze,
-  FREEZE_CAP
+  formatUtcDate,
+  FREEZE_CAP,
+  settleDaily,
+  streakDay
 } from '../src/daily.js';
 
 const score = {
@@ -67,4 +71,32 @@ test('freezes are earned by play and never by an ad or a sale', () => {
   assert.equal(earnFreeze(base, 'sale').freezes, 0);
   const full = { ...base, freezes: FREEZE_CAP };
   assert.equal(earnFreeze(full, 'play').freezes, FREEZE_CAP);
+  assert.equal(FREEZE_CAP, 2);
+});
+
+test('a freeze is earned every seven completed dailies and the board seed is the utc date', () => {
+  let state = { lastCompleted: '', streak: 0, freezes: 0, completions: 0, currency: 0 };
+  const day = new Date(2026, 9, 17, 3, 30);
+  assert.equal(streakDay(day, 4), '2026-10-16');
+  assert.equal(streakDay(new Date(2026, 9, 17, 4, 0), 4), '2026-10-17');
+  assert.equal(formatUtcDate(new Date('2026-10-17T03:30:00Z')), '2026-10-17');
+  for (let count = 1; count <= 6; count += 1) {
+    const today = `2026-10-${String(count).padStart(2, '0')}`;
+    state = settleDaily(state, today, { rewardAmount: 20, earnEveryNDays: 7 });
+    assert.equal(state.freezes, 0);
+    assert.equal(state.currency, count * 20);
+  }
+  state = settleDaily(state, '2026-10-07', { rewardAmount: 20, earnEveryNDays: 7 });
+  assert.equal(state.freezes, 1);
+  assert.equal(state.completions, 7);
+  const skipped = settleDaily({ ...state, lastCompleted: '2026-10-07', freezes: 0 }, '2026-10-10', {
+    rewardAmount: 20,
+    earnEveryNDays: 7
+  });
+  assert.equal(skipped.status, 'reset');
+  assert.equal(skipped.currency, state.currency + 20);
+  assert.equal(skipped.completions, 8);
+  const objective = dailyObjective(dateSeed('2026-10-17'), [8, 20]);
+  assert.ok(objective >= 8 && objective <= 20);
+  assert.equal(objective, dailyObjective(dateSeed('2026-10-17'), [8, 20]));
 });

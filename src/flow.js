@@ -3,21 +3,6 @@ import { LIMITS } from '../studio-core/guardrails/limits.js';
 export const INPUT_GUARD_MS = 400;
 export const HINT_MIN_PLAY_MS = 120_000;
 
-const TUTORIAL_STEPS = [
-  {
-    title: 'Drag a piece',
-    body: 'Touch a piece in the tray and drop it on the board. It snaps to the cells.'
-  },
-  {
-    title: 'Clear a line',
-    body: 'Fill a whole row or a whole column. Those cells clear and you score.'
-  },
-  {
-    title: 'Finish the round',
-    body: 'Clear the lines shown at the top to finish the round. Your best score stays on this device.'
-  }
-];
-
 export function shouldIgnoreInput(now, until) {
   return now < until;
 }
@@ -103,23 +88,11 @@ export function viewModel(model) {
       ]
     });
   }
-  if (model.screen === 'tutorial') {
-    const index = Math.min(TUTORIAL_STEPS.length - 1, Math.max(0, model.step || 0));
-    const step = TUTORIAL_STEPS[index];
-    const last = index === TUTORIAL_STEPS.length - 1;
-    return card({
-      screen: 'tutorial',
-      title: step.title,
-      body: step.body,
-      stepLabel: `${index + 1} of ${TUTORIAL_STEPS.length}`,
-      actions: [{ id: 'tutorial_next', label: last ? 'Play' : 'Next', slot: 'lower', primary: true }]
-    });
-  }
   if (model.screen === 'welcome_back') {
     return card({
       screen: 'welcome_back',
       title: 'Welcome back',
-      body: `Best score ${model.bestScore ?? 0}. Continue your run or start fresh.`,
+      body: `Best score ${model.bestScore ?? 0}. Streak ${model.streak ?? 0}. Continue your run or start fresh.`,
       actions: [
         { id: 'new_game', label: 'New game', slot: 'upper', primary: false },
         { id: 'resume', label: 'Continue run', slot: 'lower', primary: true }

@@ -180,7 +180,8 @@ export function scorePlacement({ cells, lines, streak, tuning }) {
     tuning.maxStreakMultiplier,
     1 + Math.max(0, streak - 1) * tuning.streakMultiplierStep
   );
-  return place + Math.round((linePoints + comboBonus) * multiplier);
+  const stepBonus = Math.max(0, streak) * (Number(tuning.bonusPerStep) || 0);
+  return place + Math.round((linePoints + comboBonus) * multiplier) + stepBonus;
 }
 
 export function clearFullestRows(board, count) {
@@ -249,11 +250,12 @@ export function createMatch({
   let phase = 'playing';
   let hint = null;
   let doubled = false;
+  let dryMoves = 0;
 
   function deal() {
     const dealt = dealPieces({
       board,
-      pool: poolFor(totalClears),
+      pool: poolFor(totalClears, points),
       count: traySize,
       rng,
       palette
@@ -275,6 +277,7 @@ export function createMatch({
     totalClears = Number(saved.totalClears) || 0;
     if (saved.targetClears) targetClears = saved.targetClears;
     phase = saved.phase === 'round_complete' || saved.phase === 'game_over' ? saved.phase : 'playing';
+    dryMoves = Number(saved.dryMoves) || 0;
     const incoming = Array.isArray(saved.pieces) ? saved.pieces : [];
     pieces = emptySlots(traySize).map((_, index) => hydratePiece(incoming[index]));
     if (phase === 'playing' && trayIsEmpty()) deal();
@@ -296,7 +299,8 @@ export function createMatch({
       targetClears,
       phase,
       hint,
-      grid
+      grid,
+      dryMoves
     };
   }
 
@@ -328,7 +332,17 @@ export function createMatch({
       const found = findClears(board);
       const lines = found.rows.length + found.cols.length;
       board = applyClears(board, found);
-      streak = lines > 0 ? streak + 1 : 0;
+      const grace = Math.max(0, Math.floor(Number(score?.graceMoves) || 0));
+      if (lines > 0) {
+        streak += 1;
+        dryMoves = 0;
+      } else {
+        dryMoves += 1;
+        if (dryMoves > grace) {
+          streak = 0;
+          dryMoves = 0;
+        }
+      }
       bestStreak = Math.max(bestStreak, streak);
       combo = lines >= 2 ? lines : 0;
       const gained = scorePlacement({
@@ -354,6 +368,7 @@ export function createMatch({
     continueRun(rows) {
       board = clearFullestRows(board, rows);
       streak = 0;
+      dryMoves = 0;
       combo = 0;
       hint = null;
       phase = 'playing';
@@ -396,6 +411,7 @@ export function createMatch({
       board = createBoard(grid);
       points = 0;
       streak = 0;
+      dryMoves = 0;
       bestStreak = 0;
       combo = 0;
       roundClears = 0;

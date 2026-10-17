@@ -20,7 +20,7 @@
     "invalidShakeMs": 200,
     "invalidShakePx": 7,
     "snapBackMs": 180,
-    "dragLiftPx": 76,
+    "dragLiftPx": 60,
     "streakSteps": [2, 4, 6],
     "sounds": {
       "clear": "sfx.clear",

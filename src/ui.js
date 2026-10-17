@@ -59,7 +59,7 @@ export function createUi(doc = document) {
       streak.textContent = String(hud.streak);
       round.textContent = hud.round;
       clears.textContent = `${hud.clears}/${hud.target}`;
-      if (goal) goal.textContent = hud.goal || 'Fill a row or column';
+      if (goal) goal.textContent = hud.goal || 'Clear 4 lines';
       combo.hidden = !(hud.combo >= 2);
       combo.textContent = hud.combo >= 2 ? `Combo ${hud.combo}` : '';
       if (hintNote) {

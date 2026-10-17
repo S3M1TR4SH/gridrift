@@ -1,10 +1,26 @@
-export const FREEZE_CAP = 3;
+export const FREEZE_CAP = 2;
 
 export function formatLocalDate(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+export function formatUtcDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+export function streakDay(date, rolloverHour = 4) {
+  const shifted = new Date(date.getTime() - rolloverHour * 3_600_000);
+  return formatLocalDate(shifted);
+}
+
+export function dailyObjective(seed, range = [8, 20]) {
+  const min = range[0];
+  const max = range[1];
+  const span = Math.max(1, max - min + 1);
+  return min + (Math.abs(seed) % span);
 }
 
 export function dateSeed(isoDate) {
@@ -28,7 +44,9 @@ function dailyState(state = {}) {
     lastCompleted: typeof state.lastCompleted === 'string' ? state.lastCompleted : '',
     streak: Math.max(0, Math.floor(Number(state.streak) || 0)),
     freezes: Math.max(0, Math.min(FREEZE_CAP, Math.floor(Number(state.freezes) || 0))),
-    marks: Math.max(0, Math.floor(Number(state.marks) || 0))
+    marks: Math.max(0, Math.floor(Number(state.marks) || 0)),
+    completions: Math.max(0, Math.floor(Number(state.completions) || 0)),
+    currency: Math.max(0, Math.floor(Number(state.currency) || 0))
   };
 }
 
@@ -65,4 +83,19 @@ export function earnFreeze(state, source = 'play') {
   const current = dailyState(state);
   if (source !== 'play' || current.freezes >= FREEZE_CAP) return current;
   return { ...current, freezes: current.freezes + 1 };
+}
+
+export function settleDaily(state, today, { rewardAmount = 20, earnEveryNDays = 7 } = {}) {
+  const next = completeDaily(state, today);
+  if (!['started', 'continued', 'frozen', 'reset'].includes(next.status)) return next;
+  const completions = next.completions + 1;
+  let settled = {
+    ...next,
+    completions,
+    currency: next.currency + Math.max(0, Math.floor(rewardAmount))
+  };
+  if (earnEveryNDays > 0 && completions % earnEveryNDays === 0) {
+    settled = earnFreeze(settled, 'play');
+  }
+  return settled;
 }
