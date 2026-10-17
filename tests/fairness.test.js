@@ -4,7 +4,7 @@ import pacing from '../config/pacing.json' with { type: 'json' };
 import { createMatch, fitsAnywhere } from '../src/logic.js';
 import { SHAPES } from '../src/logic.js';
 import { mulberry32 } from '../src/rng.js';
-import { createPacer } from '../studio-core/pacing/pacer.js';
+import { createPacer } from '../studio-core/index.js';
 
 const score = {
   place: 1,

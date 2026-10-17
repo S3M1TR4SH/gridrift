@@ -1,10 +1,12 @@
-# studio-core 0.1.0 release checklist
+# studio-core 0.2.0 release checklist
 
 This folder is self-contained. It must not import game code, asset libraries, ad SDKs, or network endpoints. It can be copied into its own repository without the game.
 
 ## Before tagging
 
-- [ ] `VERSION`, `package.json` version, and `version.js` all read `0.1.0` (or the new version, changed together).
+- [ ] `VERSION`, `package.json` version, and `version.js` all read `0.2.0` (or the new version, changed together).
+- [ ] Host games import `index.js` or `sim/index.js` only. `templates/new-game` `npm test` still runs the guardrail, pacing, consent, ads, and AdMob suites.
+- [ ] `docs/NEW_GAME.md` and `THIRD_PARTY.md` match the adapters that ship: noop, H5 Games Ads, and AdMob via the Capacitor bridge.
 - [ ] `node --test tests` from this folder passes.
 - [ ] A search of this folder finds no imports of the host game (`src/`, `config/`, `levels/`, `branding/`, or the game name).
 - [ ] `guardrails/limits.js` is still hard-coded. No limit reads from game config.

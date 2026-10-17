@@ -1,0 +1,13 @@
+{
+  "grid": 8,
+  "traySize": 3,
+  "continueClears": 3,
+  "levelOrder": ["level-01"],
+  "score": {
+    "place": 1,
+    "line": 10,
+    "comboBonusPerExtraLine": 5,
+    "streakMultiplierStep": 0.5,
+    "maxStreakMultiplier": 4
+  }
+}

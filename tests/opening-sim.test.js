@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import pacing from '../config/pacing.json' with { type: 'json' };
 import tuning from '../config/tuning.json' with { type: 'json' };
-import { createPacer } from '../studio-core/pacing/pacer.js';
+import { createPacer } from '../studio-core/index.js';
 import {
   canPlace,
   createBoard,

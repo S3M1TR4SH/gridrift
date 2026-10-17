@@ -1,0 +1,8 @@
+{
+  "appId": "app.studio.shell",
+  "appName": "Studio Shell",
+  "webDir": "www",
+  "android": {
+    "path": "android"
+  }
+}

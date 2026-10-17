@@ -1,4 +1,4 @@
-export const CACHE_NAME = 'gridrift-0.1.8';
+export const CACHE_NAME = 'gridrift-0.1.9';
 
 export const PRECACHE_URLS = [
   './',
@@ -25,7 +25,16 @@ export const PRECACHE_URLS = [
   './src/onboarding.js',
   './src/retention.js',
   './src/styles.css',
+  './studio-core/index.js',
+  './studio-core/version.js',
   './studio-core/juice/feedback.js',
+  './studio-core/ads/noop.js',
+  './studio-core/ads/bridge.js',
+  './studio-core/ads/h5/adapter.js',
+  './studio-core/ads/admob/adapter.js',
+  './studio-core/ads/admob/capacitor.js',
+  './studio-core/ads/admob/demo-units.js',
+  './studio-core/pwa/manifest.js',
   './studio-core/ads/guard.js',
   './studio-core/ads/contract.js',
   './studio-core/ads/placeholder.js',

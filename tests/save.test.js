@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memoryStorage } from '../studio-core/consent/age-gate.js';
+import { memoryStorage } from '../studio-core/index.js';
 import { createSaveStore } from '../src/save.js';
 
 function run() {

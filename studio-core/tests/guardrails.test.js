@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { LIMITS } from '../guardrails/limits.js';
 import { validateGameConfig, validatePacing } from '../guardrails/validate.js';
-import { VERSION, readVersionFile } from '../version.js';
+import { VERSION } from '../version.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const overLimit = JSON.parse(readFileSync(join(here, 'fixtures', 'over-limit-pacing.json'), 'utf8'));
@@ -25,12 +25,14 @@ const validTuning = {
   }
 };
 
-test('version pins 0.1.0 across the package', () => {
+test('version pins 0.2.0 across the package', () => {
   const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
-  assert.equal(VERSION, '0.1.0');
-  assert.equal(readVersionFile(), '0.1.0');
-  assert.equal(pkg.version, '0.1.0');
+  const file = readFileSync(join(here, '..', 'VERSION'), 'utf8').trim();
+  assert.equal(VERSION, '0.2.0');
+  assert.equal(file, '0.2.0');
+  assert.equal(pkg.version, '0.2.0');
   assert.equal(pkg.dependencies, undefined);
+  assert.equal(pkg.exports['.'], './index.js');
 });
 
 test('limits are frozen and cannot be widened', () => {

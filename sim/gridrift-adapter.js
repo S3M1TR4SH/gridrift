@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { resolve } from 'node:path';
-import { startStaticServer } from '../studio-core/sim/static-server.js';
+import { startStaticServer } from '../studio-core/sim/index.js';
 
 const PACING_URL = '/config/pacing.json';
 const TUNING_URL = '/config/tuning.json';

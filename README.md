@@ -52,7 +52,7 @@ Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Promp
 - `src/` is the game: rules, input, rendering, and the screen flow.
 - `levels/` and `config/` tune rounds, scoring, and ad pacing. `config/pacing.json` cannot override the hard limits in `studio-core`.
 - `branding/` holds the name, colors, and generated placeholder icons.
-- `studio-core/` is a separate package (version 0.1.0). It does not import Gridrift. Copy that folder out when it gets its own repo. See `studio-core/RELEASE_CHECKLIST.md`.
+- `studio-core/` is a separate package (version 0.2.0). Gridrift imports it through `studio-core/index.js` (and `studio-core/sim/index.js` for the sim). It does not import Gridrift. A new game starts from `studio-core/templates/new-game` and `studio-core/docs/NEW_GAME.md`. See `studio-core/RELEASE_CHECKLIST.md`.
 - `assets.manifest.json` is the asset-id list. Its format is the library pin plus a flat array of string ids.
 
 ## Ads, privacy, and stats

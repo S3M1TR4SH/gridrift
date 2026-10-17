@@ -1,4 +1,4 @@
-import { LIMITS } from '../studio-core/guardrails/limits.js';
+import { LIMITS } from '../studio-core/index.js';
 
 export const INPUT_GUARD_MS = 400;
 export const HINT_MIN_PLAY_MS = 120_000;

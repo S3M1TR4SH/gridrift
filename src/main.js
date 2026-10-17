@@ -4,19 +4,22 @@ import analyticsConfig from '../config/analytics.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
 import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
-import { createMixpanelAdapter } from '../studio-core/analytics/adapters/mixpanel.js';
-import { createTracker } from '../studio-core/analytics/tracker.js';
 import {
   applyAnalyticsChoice,
+  celebrationLevel,
   createConsentStore,
+  createFeedback,
+  createGuardedAds,
+  createInstallController,
+  createMixpanelAdapter,
+  createPacer,
+  createTracker,
   evaluateAgeGate,
-  memoryStorage
-} from '../studio-core/consent/age-gate.js';
-import { validateGameConfig, validateTuning } from '../studio-core/guardrails/validate.js';
-import { celebrationLevel, createFeedback } from '../studio-core/juice/feedback.js';
-import { createGuardedAds } from '../studio-core/ads/guard.js';
-import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
-import { createInstallController } from '../studio-core/pwa/install.js';
+  memoryStorage,
+  neutralizePacing,
+  validateGameConfig,
+  validateTuning
+} from '../studio-core/index.js';
 import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
 import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';

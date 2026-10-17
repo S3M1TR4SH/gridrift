@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import analytics from '../config/analytics.json' with { type: 'json' };
-import { findUnsafeLiterals } from '../studio-core/guardrails/validate.js';
+import { findUnsafeLiterals } from '../studio-core/index.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 

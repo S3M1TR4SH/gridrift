@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LIMITS } from '../studio-core/guardrails/limits.js';
+import { LIMITS } from '../studio-core/index.js';
 import {
   HINT_MIN_MOVES,
   HINT_MIN_PLAY_MS,

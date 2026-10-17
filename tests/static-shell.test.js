@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import brand from '../branding/brand.json' with { type: 'json' };
 import { PRECACHE_URLS } from '../src/precache.js';
-import { buildManifest } from '../studio-core/pwa/manifest.js';
+import { buildManifest } from '../studio-core/index.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 

@@ -3,7 +3,9 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createH5GamesAdsAdapter } from '../ads/h5/adapter.js';
 import { createGuardedAds } from '../ads/guard.js';
+import { createNoopAdapter } from '../ads/noop.js';
 import { createPlaceholderAdapter } from '../ads/placeholder.js';
 import { createCrazyGamesAdapter } from '../ads/crazygames/adapter.js';
 import { createGameDistributionAdapter } from '../ads/gamedistribution/adapter.js';
@@ -43,6 +45,8 @@ function spy(adapter) {
 
 const factories = [
   createPlaceholderAdapter,
+  createNoopAdapter,
+  createH5GamesAdsAdapter,
   createPokiAdapter,
   createCrazyGamesAdapter,
   createGameDistributionAdapter,
@@ -111,8 +115,10 @@ test('guardrails cap interstitials and rewarded grants for every adapter', () =>
       assert.equal(adapter.calls.filter((call) => call[0] === 'rewarded').length, 1);
     } else {
       assert.equal(first.shown, false);
-      assert.equal(first.reason, 'sdk_not_loaded');
-      assert.equal(ads.showRewarded({ placement: 'hint', optedIn: true }).reason, 'sdk_not_loaded');
+      assert.ok(first.reason === 'sdk_not_loaded' || first.reason === 'noop', first.reason);
+      const reward = ads.showRewarded({ placement: 'hint', optedIn: true });
+      assert.equal(reward.shown, false);
+      assert.ok(reward.reason === 'sdk_not_loaded' || reward.reason === 'noop', reward.reason);
       assert.equal(clock.pacer.snapshot().interstitialsShown, 0);
       assert.equal(clock.pacer.snapshot().rewardedShown, 0);
     }
