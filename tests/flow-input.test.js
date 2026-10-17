@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LIMITS } from '../studio-core/guardrails/limits.js';
 import {
+  HINT_MIN_PLAY_MS,
   INPUT_GUARD_MS,
   canOfferContinue,
+  canOfferHint,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
@@ -94,6 +96,34 @@ test('drag snaps to the grid and a tap selects', () => {
   });
   assert.notEqual(ignored.effect?.type, 'place');
   assert.equal(ignored.effect.moved, false);
+});
+
+test('game over offers an opt-in continue once and always offers restart', () => {
+  const over = viewModel({ screen: 'game_over', rewarded: true, score: 40, bestStreak: 3 });
+  assert.deepEqual(over.actions.map((action) => action.id), ['offer_continue', 'restart']);
+  assert.equal(over.actions.find((action) => action.id === 'offer_continue').label, 'Continue');
+  assert.equal(over.actions.find((action) => action.id === 'restart').label, 'Restart');
+  const spent = viewModel({ screen: 'game_over', rewarded: false, score: 40, bestStreak: 3 });
+  assert.deepEqual(spent.actions.map((action) => action.id), ['restart']);
+  assert.equal(canOfferContinue(0, true), true);
+  assert.equal(canOfferContinue(1, true), false);
+  assert.equal(canOfferContinue(0, false), false);
+  const confirm = viewModel({ screen: 'rewarded_confirm', kind: 'continue' });
+  assert.equal(confirm.actions.some((action) => action.id === 'decline'), true);
+  assert.equal(confirm.actions.some((action) => action.id === 'watch'), true);
+});
+
+test('a rewarded hint waits two minutes unless the player is stuck, and only once', () => {
+  assert.equal(HINT_MIN_PLAY_MS, 120_000);
+  const open = { elapsedMs: 0, stuck: false, hintsUsed: 0, rewardedAllowed: true };
+  assert.equal(canOfferHint(open), false);
+  assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS - 1 }), false);
+  assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS }), true);
+  assert.equal(canOfferHint({ ...open, stuck: true }), true);
+  assert.equal(canOfferHint({ ...open, stuck: true, hintsUsed: 1 }), false);
+  assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS, hintsUsed: 1 }), false);
+  assert.equal(canOfferHint({ ...open, elapsedMs: HINT_MIN_PLAY_MS, rewardedAllowed: false }), false);
+  assert.equal(canOfferHint({ ...open, stuck: true, rewardedAllowed: false }), false);
 });
 
 test('the first-run tutorial has three steps and welcome can resume', () => {

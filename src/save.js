@@ -10,6 +10,12 @@ function whole(value) {
   return Math.min(1_000_000, Math.floor(number));
 }
 
+function playDuration(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return 0;
+  return Math.min(24 * 60 * 60 * 1000, Math.floor(number));
+}
+
 function cellValue(cell) {
   if (!cell) return 0;
   if (typeof cell !== 'string') return 0;
@@ -44,6 +50,9 @@ function sanitizeRun(run) {
     targetClears: whole(run.targetClears) || 4,
     levelIndex: whole(run.levelIndex),
     continueUses: whole(run.continueUses),
+    hintsUsed: whole(run.hintsUsed) > 0 ? 1 : 0,
+    playMs: playDuration(run.playMs),
+    sawStuck: run.sawStuck === true,
     phase
   };
 }

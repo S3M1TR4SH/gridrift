@@ -19,6 +19,7 @@ import { createAudio } from './audio.js';
 import {
   INPUT_GUARD_MS,
   canOfferContinue,
+  canOfferHint,
   planBreak,
   planRoundAdvance,
   rowsForContinue,
@@ -28,7 +29,7 @@ import {
 import { createPointerState, pointerReducer } from './input.js';
 import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
-import { canPlace, createMatch } from './logic.js';
+import { canPlace, createMatch, isStuck } from './logic.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
 import { createSaveStore } from './save.js';
@@ -99,6 +100,10 @@ function start() {
   });
   let levelIndex = progress.run?.levelIndex || 0;
   let continueUses = progress.run?.continueUses || 0;
+  let hintsUsed = progress.run?.hintsUsed || 0;
+  let playMs = progress.run?.playMs || 0;
+  let sawStuck = progress.run?.sawStuck === true;
+  let lastTick = performance.now();
   let pointer = createPointerState();
   let pointerKind = 'mouse';
   let ignoreUntil = 0;
@@ -174,6 +179,9 @@ function start() {
         targetClears: state.targetClears,
         levelIndex,
         continueUses,
+        hintsUsed,
+        playMs: Math.floor(playMs),
+        sawStuck,
         phase: state.phase
       }
     });
@@ -232,9 +240,28 @@ function start() {
     if (match.state.phase === 'game_over') finishGame();
   }
 
+  function resetRunCounters() {
+    continueUses = 0;
+    hintsUsed = 0;
+    playMs = 0;
+    sawStuck = false;
+  }
+
+  function hintReady() {
+    if (screen() !== 'play' || consent?.isChild) return false;
+    const rewarded = pacing.ads?.rewarded;
+    if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return false;
+    return canOfferHint({
+      elapsedMs: playMs,
+      stuck: sawStuck,
+      hintsUsed,
+      rewardedAllowed: ads.canOfferRewarded('hint')
+    });
+  }
+
   function restart() {
     levelIndex = 0;
-    continueUses = 0;
+    resetRunCounters();
     rewardKind = null;
     match = makeMatch();
     overlay = null;
@@ -257,6 +284,7 @@ function start() {
     tracker.track('rewarded_completed', { kind });
     armIgnore();
     if (rewardKind === 'hint') {
+      hintsUsed = 1;
       match.showHint();
       overlay = null;
       tap();
@@ -351,7 +379,7 @@ function start() {
     }
     if (id === 'new_game') {
       levelIndex = 0;
-      continueUses = 0;
+      resetRunCounters();
       rewardKind = null;
       match = makeMatch();
       pointer = createPointerState();
@@ -396,6 +424,8 @@ function start() {
     }
     if (id === 'offer_continue' || id === 'offer_hint') {
       const kind = id === 'offer_hint' ? 'hint' : 'continue';
+      if (kind === 'hint' && !hintReady()) return;
+      if (kind === 'continue' && !canOfferContinue(continueUses, ads.canOfferRewarded('continue'))) return;
       if (!ads.canOfferRewarded(kind)) return;
       rewardKind = kind;
       tracker.track('rewarded_offered', { kind });
@@ -598,15 +628,17 @@ function start() {
   }
 
   function hintMode() {
-    if (screen() !== 'play' || consent?.isChild) return 'off';
-    const rewarded = pacing.ads?.rewarded;
-    if (!rewarded?.enabled || !rewarded.placements?.includes('hint')) return 'off';
-    return ads.canOfferRewarded('hint') ? 'ready' : 'soon';
+    return hintReady() ? 'ready' : 'off';
   }
 
   function frame() {
+    const now = performance.now();
+    const elapsed = Math.max(0, Math.min(1000, now - lastTick));
+    lastTick = now;
+    if (screen() === 'play') playMs += elapsed;
+    if (!sawStuck && screen() === 'play' && isStuck(match.state.board, match.state.pieces)) sawStuck = true;
     const state = match.state;
-    const fx = feedback.sample(performance.now());
+    const fx = feedback.sample(now);
     let ghost = null;
     let drag = null;
     const active = pointer.drag ? state.pieces[pointer.drag.index] : null;

@@ -65,6 +65,19 @@ test('best score only rises and personal fields are dropped', () => {
   assert.equal(raw.includes('555-0100'), false);
 });
 
+test('hint progress stays on the run and is capped at one use', () => {
+  const store = createSaveStore(memoryStorage());
+  store.save({
+    bestScore: 1,
+    tutorialSeen: true,
+    run: { ...run(), hintsUsed: 4, playMs: 130000, sawStuck: true }
+  });
+  const loaded = store.load();
+  assert.equal(loaded.run.hintsUsed, 1);
+  assert.equal(loaded.run.playMs, 130000);
+  assert.equal(loaded.run.sawStuck, true);
+});
+
 test('a corrupt payload does not restore a run', () => {
   const storage = memoryStorage();
   const store = createSaveStore(storage);

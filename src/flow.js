@@ -1,6 +1,7 @@
 import { LIMITS } from '../studio-core/guardrails/limits.js';
 
 export const INPUT_GUARD_MS = 400;
+export const HINT_MIN_PLAY_MS = 120_000;
 
 const TUTORIAL_STEPS = [
   {
@@ -23,6 +24,12 @@ export function shouldIgnoreInput(now, until) {
 
 export function canOfferContinue(uses, rewardedAllowed) {
   return Boolean(rewardedAllowed) && uses < LIMITS.rewardedEffects.maxContinueUsesPerMatch;
+}
+
+export function canOfferHint({ elapsedMs = 0, stuck = false, hintsUsed = 0, rewardedAllowed = false } = {}) {
+  if (!rewardedAllowed || hintsUsed >= 1) return false;
+  if (stuck) return true;
+  return elapsedMs >= HINT_MIN_PLAY_MS;
 }
 
 export function rowsForContinue(requested) {

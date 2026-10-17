@@ -1,4 +1,4 @@
-export const CACHE_NAME = 'gridrift-0.1.2';
+export const CACHE_NAME = 'gridrift-0.1.4';
 
 export const PRECACHE_URLS = [
   './',

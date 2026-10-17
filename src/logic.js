@@ -89,6 +89,52 @@ export function hasAnyMove(board, pieces) {
   return pieces.some((piece) => piece && fitsAnywhere(board, piece.shape));
 }
 
+function outlook(board, shape, x, y) {
+  if (!canPlace(board, shape, x, y)) return null;
+  const painted = paint(board, shape, x, y, 1);
+  const found = findClears(painted);
+  let bestFill = 0;
+  const rows = new Set();
+  const cols = new Set();
+  shape.forEach((row, dy) => row.forEach((cell, dx) => {
+    if (!cell) return;
+    rows.add(y + dy);
+    cols.add(x + dx);
+  }));
+  for (const row of rows) bestFill = Math.max(bestFill, painted[row].filter(Boolean).length);
+  for (const col of cols) {
+    let filled = 0;
+    for (const line of painted) if (line[col]) filled += 1;
+    bestFill = Math.max(bestFill, filled);
+  }
+  return { lines: found.rows.length + found.cols.length, bestFill };
+}
+
+function filledCount(board) {
+  return board.reduce((sum, row) => sum + row.filter(Boolean).length, 0);
+}
+
+export function hasGoodMove(board, pieces) {
+  const almost = board.length - 1;
+  return pieces.some((piece) => {
+    const shape = piece?.shape;
+    if (!shape?.length) return false;
+    for (let y = 0; y <= board.length - shape.length; y += 1) {
+      for (let x = 0; x <= board[0].length - shape[0].length; x += 1) {
+        const result = outlook(board, shape, x, y);
+        if (result && (result.lines > 0 || result.bestFill >= almost)) return true;
+      }
+    }
+    return false;
+  });
+}
+
+export function isStuck(board, pieces) {
+  if (!hasAnyMove(board, pieces)) return false;
+  if (filledCount(board) < board.length * 2) return false;
+  return !hasGoodMove(board, pieces);
+}
+
 export function placementValue(board, shape, x, y) {
   if (!canPlace(board, shape, x, y)) return Number.NEGATIVE_INFINITY;
   const painted = paint(board, shape, x, y, 1);

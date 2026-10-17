@@ -12,6 +12,7 @@ import {
   findSmartHint,
   fitsAnywhere,
   hasAnyMove,
+  isStuck,
   scorePlacement,
   SHAPES
 } from '../src/logic.js';
@@ -251,6 +252,108 @@ test('a saved run restores score and stable tray slots', () => {
   assert.equal(match.state.pieces[1], null);
   assert.equal(match.place(0, 0, 0).ok, true);
   assert.equal(match.state.pieces[2].shapeName, 'dot');
+});
+
+test('lockout is deterministic and only happens when no tray piece fits', () => {
+  const size = 6;
+  const board = createBoard(size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) board[y][x] = x === size - 1 && y === size - 1 ? 0 : '#fff';
+  }
+  const dead = [
+    { shapeName: 'line2', color: '#ffffff', tileId: 'tile.blue' },
+    { shapeName: 'square', color: '#ffffff', tileId: 'tile.red' }
+  ];
+  const locked = createMatch({
+    grid: size,
+    traySize: 2,
+    score,
+    rng: () => 0.2,
+    targetClears: 99,
+    poolFor: () => ['line2', 'square'],
+    palette,
+    saved: { board, pieces: dead, score: 4, phase: 'playing' }
+  });
+  const again = createMatch({
+    grid: size,
+    traySize: 2,
+    score,
+    rng: () => 0.9,
+    targetClears: 99,
+    poolFor: () => ['line2', 'square'],
+    palette,
+    saved: { board: board.map((row) => row.slice()), pieces: dead, score: 4, phase: 'playing' }
+  });
+  assert.equal(hasAnyMove(locked.state.board, locked.state.pieces), false);
+  assert.equal(locked.state.phase, 'game_over');
+  assert.equal(again.state.phase, 'game_over');
+  assert.deepEqual(again.state.board, locked.state.board);
+
+  const open = [
+    [0, '#fff', '#fff', 0],
+    [0, 0, 0, '#fff'],
+    ['#fff', '#fff', 0, 0],
+    ['#fff', 0, '#fff', 0]
+  ];
+  const living = createMatch({
+    grid: 4,
+    traySize: 2,
+    score,
+    rng: () => 0,
+    targetClears: 99,
+    poolFor: () => ['line2', 'square'],
+    palette,
+    saved: { board: open, pieces: dead, score: 4, phase: 'playing' }
+  });
+  assert.equal(hasAnyMove(living.state.board, living.state.pieces), true);
+  assert.equal(living.state.phase, 'playing');
+
+  const placed = living.place(0, 0, 1);
+  assert.equal(placed.ok, true);
+  assert.equal(placed.lines, 0);
+  assert.equal(hasAnyMove(living.state.board, living.state.pieces), false);
+  assert.equal(placed.gameOver, true);
+  assert.equal(living.state.phase, 'game_over');
+});
+
+test('an early board is not stuck, and a crowded board with no near-clear is', () => {
+  const empty = createBoard(6);
+  const dot = { shapeName: 'dot', shape: SHAPES.dot, color: '#fff', tileId: 'tile.blue' };
+  assert.equal(isStuck(empty, [dot]), false);
+
+  const opening = createBoard(6);
+  opening[0] = ['#fff', '#fff', '#fff', 0, 0, 0];
+  opening[1] = ['#fff', '#fff', '#fff', 0, 0, 0];
+  assert.equal(hasAnyMove(opening, [dot]), true);
+  assert.equal(isStuck(opening, [dot]), false);
+
+  const crowded = [
+    ['#fff', '#fff', '#fff', 0, 0, 0],
+    [0, '#fff', '#fff', '#fff', 0, 0],
+    [0, 0, '#fff', '#fff', '#fff', 0],
+    [0, 0, 0, '#fff', '#fff', '#fff'],
+    ['#fff', 0, 0, 0, '#fff', '#fff'],
+    ['#fff', '#fff', 0, 0, 0, '#fff']
+  ];
+  assert.equal(hasAnyMove(crowded, [dot]), true);
+  assert.equal(isStuck(crowded, [dot]), true);
+  assert.equal(isStuck(crowded.map((row) => row.slice()), [dot]), true);
+
+  const ready = createBoard(6);
+  ready[0] = ['#fff', '#fff', '#fff', '#fff', '#fff', 0];
+  for (let y = 1; y < 6; y += 1) {
+    ready[y][0] = '#fff';
+    ready[y][2] = '#fff';
+  }
+  assert.equal(isStuck(ready, [dot]), false);
+
+  const hole = createBoard(4);
+  for (let y = 0; y < 4; y += 1) {
+    for (let x = 0; x < 4; x += 1) hole[y][x] = x === 3 && y === 3 ? 0 : '#fff';
+  }
+  const square = { shapeName: 'square', shape: SHAPES.square, color: '#fff', tileId: 'tile.blue' };
+  assert.equal(hasAnyMove(hole, [square]), false);
+  assert.equal(isStuck(hole, [square]), false);
 });
 
 test('continue opens the fullest rows', () => {

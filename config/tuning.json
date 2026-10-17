@@ -1,5 +1,5 @@
 {
-  "grid": 10,
+  "grid": 6,
   "traySize": 3,
   "continueClears": 3,
   "levelOrder": ["round-01", "round-02", "round-03", "endless"],

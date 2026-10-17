@@ -1,6 +1,6 @@
 # Gridrift
 
-Gridrift is a small HTML5 canvas puzzle. Drag pieces onto the grid, clear full rows and columns, and chain a streak. The board is a 10 by 10 grid. Rounds raise a clear target, then the same board continues.
+Gridrift is a small HTML5 canvas puzzle. Drag pieces onto the grid, clear full rows and columns, and chain a streak. The board is a 6 by 6 grid, and the opening pieces are short lines and small blocks so a line can clear in the first few moves. Rounds raise a clear target, then the same board continues. The run ends when no piece in the tray fits. That is not forced: if any shape in the current mix still fits, the tray keeps a legal move.
 
 Pieces, buttons, fonts, and sounds are drawn or synthesized in the page. `assets.manifest.json` lists the ids this game wants from `S3M1TR4SH/asset-library` at tag `v0.2.0`. That library is not published yet, so the loader keeps the id and uses a placeholder when no local file is available. It does not request the library over the network.
 
@@ -57,7 +57,7 @@ Use Node.js 22 or newer on Windows. The same `npm` scripts work in Command Promp
 
 ## Ads, privacy, and stats
 
-Ads go through `studio-core/ads/guard.js`. The default adapter is a local placeholder: no SDK, no key, and no ad request. Stub folders for Poki, CrazyGames, GameDistribution, and Playgama are documented there and are not loaded. A full-screen placeholder can appear between rounds or, when a continue offer is not available, after a game over. The close control sits away from the button that opened it. Rewarded continue and hint ads are opt-in, and declining them always returns to a playable choice. Restart is always available. Notes on portal payouts live in `studio-core/docs/revenue-requirements.md` and are not used at runtime.
+Ads go through `studio-core/ads/guard.js`. The default adapter is a local placeholder: no SDK, no key, and no ad request. Stub folders for Poki, CrazyGames, GameDistribution, and Playgama are documented there and are not loaded. A full-screen placeholder can appear between rounds or, when a continue offer is not available, after a game over. The close control sits away from the button that opened it. The game-over screen offers Restart, and one opt-in Continue per run. The Continue button asks before it plays a rewarded placeholder, and declining it leaves Restart on screen. A Hint button stays hidden until two minutes of play, or until the board is crowded and no piece can finish a line. It can be used once per run, and only after the player opts in. Notes on portal payouts live in `studio-core/docs/revenue-requirements.md` and are not used at runtime.
 
 The age gate treats players under 13 as children: no ads and no analytics. Everyone else sees an opt-in for on-device stats. Until that opt-in, events are dropped. The tracker has no send path.
 
