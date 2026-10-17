@@ -139,6 +139,8 @@ test('retention events stay behind consent and map days since install', async ()
   assert.equal(blocked.tracker.track('first_open', { game: 'gridrift' }).reason, 'no_consent');
   assert.equal(blocked.tracker.track('session_start', { game: 'gridrift', days_since_install: 1 }).reason, 'no_consent');
   assert.equal(blocked.tracker.track('daily_complete', { streak: 1, freezes: 0 }).reason, 'no_consent');
+  assert.equal(blocked.tracker.track('app_open', { is_first: true, days_since_install: 0, streak: 0 }).reason, 'no_consent');
+  assert.equal(blocked.tracker.track('line_clear', { lines: 1, combo: 0, run_streak: 1 }).reason, 'no_consent');
   assert.equal(blocked.loads(), 0);
   assert.equal(blocked.client.calls.length, 0);
 
@@ -147,6 +149,7 @@ test('retention events stay behind consent and map days since install', async ()
   assert.equal(child.tracker.track('first_open', { game: 'gridrift' }).reason, 'no_consent');
   assert.equal(child.tracker.track('session_start', { days_since_install: 7 }).reason, 'no_consent');
   assert.equal(child.tracker.track('daily_complete', { streak: 2, freezes: 1 }).reason, 'no_consent');
+  assert.equal(child.tracker.track('freeze_earned', { freezes: 1 }).reason, 'no_consent');
   assert.equal(child.loads(), 0);
 
   const session = harness({ isChild: false, analyticsAllowed: true });
@@ -161,6 +164,35 @@ test('retention events stay behind consent and map days since install', async ()
   assert.deepEqual(tracked.map((call) => call.name), ['first_open', 'session_start', 'daily_complete']);
   assert.equal(tracked[1].props.days_since_install, 7);
   assert.equal(tracked[2].props.streak, 3);
+  assert.equal(session.tracker.track('app_open', { is_first: false, days_since_install: 7, streak: 2 }).ok, true);
+  assert.equal(session.tracker.track('onboarding_step', { step: 1 }).ok, true);
+  assert.equal(session.tracker.track('onboarding_complete', { ms: 1200 }).ok, true);
+  assert.equal(session.tracker.track('run_start', { mode: 'endless', run_index: 1 }).ok, true);
+  assert.equal(session.tracker.track('line_clear', { lines: 1, combo: 0, run_streak: 1 }).ok, true);
+  assert.equal(session.tracker.track('run_end', {
+    score: 10,
+    best: 10,
+    is_new_best: true,
+    moves: 4,
+    cause: 'stuck'
+  }).ok, true);
+  assert.equal(session.tracker.track('daily_start', { seed: 5 }).ok, true);
+  assert.equal(session.tracker.track('streak_update', { value: 3, freeze_used: false }).ok, true);
+  assert.equal(session.tracker.track('freeze_earned', { freezes: 1 }).ok, true);
+  const names = session.client.calls.filter((call) => call.method === 'track').map((call) => call.name);
+  for (const name of [
+    'app_open',
+    'onboarding_step',
+    'onboarding_complete',
+    'run_start',
+    'line_clear',
+    'run_end',
+    'daily_start',
+    'streak_update',
+    'freeze_earned'
+  ]) {
+    assert.ok(names.includes(name), name);
+  }
   assert.equal(session.client.calls.some((call) => call.method === 'identify' || call.method === 'people.set'), false);
   assert.equal(session.loads(), 1);
 });

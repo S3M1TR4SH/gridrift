@@ -1,3 +1,5 @@
+import { FREEZE_CAP } from './daily.js';
+
 const SAVE_KEY = 'gridrift.run.v1';
 
 function emptySettings() {
@@ -5,7 +7,11 @@ function emptySettings() {
 }
 
 function emptyDaily() {
-  return { lastCompleted: '', streak: 0, freezes: 0, marks: 0 };
+  return { lastCompleted: '', streak: 0, freezes: 0, marks: 0, completions: 0, currency: 0 };
+}
+
+function emptyMercy() {
+  return { lossesInRow: 0, queued: 0 };
 }
 
 function emptySave() {
@@ -14,6 +20,9 @@ function emptySave() {
     tutorialSeen: false,
     sessions: 0,
     installDay: '',
+    lastSeen: 0,
+    easyRun: false,
+    mercy: emptyMercy(),
     settings: emptySettings(),
     daily: emptyDaily(),
     run: null
@@ -33,6 +42,12 @@ function whole(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return 0;
   return Math.min(1_000_000, Math.floor(number));
+}
+
+function timestamp(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(4_102_444_800_000, Math.floor(number));
 }
 
 function playDuration(value) {
@@ -81,6 +96,7 @@ function sanitizeRun(run) {
     playMs: playDuration(run.playMs),
     sawStuck: run.sawStuck === true,
     mode: run.mode === 'daily' ? 'daily' : 'arcade',
+    dryMoves: whole(run.dryMoves),
     phase
   };
 }
@@ -94,6 +110,12 @@ export function sanitizeSave(data) {
     tutorialSeen: data.tutorialSeen === true,
     sessions: whole(data.sessions),
     installDay: day(data.installDay),
+    lastSeen: timestamp(data.lastSeen),
+    easyRun: data.easyRun === true,
+    mercy: {
+      lossesInRow: Math.min(100, whole(data.mercy?.lossesInRow)),
+      queued: Math.min(1, whole(data.mercy?.queued))
+    },
     settings: {
       reducedMotion: choice(settings.reducedMotion),
       haptics: choice(settings.haptics)
@@ -101,8 +123,10 @@ export function sanitizeSave(data) {
     daily: {
       lastCompleted: day(daily.lastCompleted),
       streak: whole(daily.streak),
-      freezes: Math.min(3, whole(daily.freezes)),
-      marks: whole(daily.marks)
+      freezes: Math.min(FREEZE_CAP, whole(daily.freezes)),
+      marks: whole(daily.marks),
+      completions: whole(daily.completions),
+      currency: whole(daily.currency)
     },
     run: sanitizeRun(data.run)
   };

@@ -156,17 +156,11 @@ test('a rewarded hint waits two minutes unless the player is stuck, and only onc
   assert.equal(canOfferHint({ ...open, stuck: true, rewardedAllowed: false }), false);
 });
 
-test('the first-run tutorial has three steps and welcome can resume', () => {
-  const steps = [0, 1, 2].map((step) => viewModel({ screen: 'tutorial', step }));
-  assert.equal(steps[0].stepLabel, '1 of 3');
-  assert.equal(steps[0].actions[0].label, 'Next');
-  assert.equal(steps[0].actions[0].primary, true);
-  assert.equal(steps[0].separated, false);
-  assert.match(steps[0].body, /snaps/i);
-  assert.match(steps[1].body, /row or a whole column/i);
-  assert.equal(steps[2].actions[0].label, 'Play');
-  const welcome = viewModel({ screen: 'welcome_back', bestScore: 15 });
+test('welcome back shows the best score and the day streak', () => {
+  const welcome = viewModel({ screen: 'welcome_back', bestScore: 15, streak: 4 });
   assert.equal(welcome.title, 'Welcome back');
+  assert.match(welcome.body, /Best score 15/);
+  assert.match(welcome.body, /Streak 4/);
   assert.equal(welcome.actions.find((action) => action.id === 'resume').slot, 'lower');
   assert.equal(welcome.actions.find((action) => action.id === 'new_game').slot, 'upper');
   assert.equal(welcome.separated, false);

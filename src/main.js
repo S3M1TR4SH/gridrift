@@ -2,6 +2,7 @@ import assetManifest from '../assets.manifest.json' with { type: 'json' };
 import brand from '../branding/brand.json' with { type: 'json' };
 import analyticsConfig from '../config/analytics.json' with { type: 'json' };
 import pacingConfig from '../config/pacing.json' with { type: 'json' };
+import retention from '../config/retention.json' with { type: 'json' };
 import tuningConfig from '../config/tuning.json' with { type: 'json' };
 import { createMixpanelAdapter } from '../studio-core/analytics/adapters/mixpanel.js';
 import { createTracker } from '../studio-core/analytics/tracker.js';
@@ -18,7 +19,7 @@ import { createPacer, neutralizePacing } from '../studio-core/pacing/pacer.js';
 import { createInstallController } from '../studio-core/pwa/install.js';
 import { loadAssets } from './assets.js';
 import { createAudio } from './audio.js';
-import { completeDaily, dateSeed, daysSinceInstall, earnFreeze, formatLocalDate } from './daily.js';
+import { dateSeed, dailyObjective, daysSinceInstall, formatLocalDate, formatUtcDate, settleDaily, streakDay } from './daily.js';
 import {
   INPUT_GUARD_MS,
   canOfferContinue,
@@ -35,6 +36,8 @@ import { createPointerState, pointerReducer } from './input.js';
 import { CONTROL_GAP_PX, computeLayout, hitTray, pointerScale, snapOrigin, traySlots } from './layout.js';
 import { LEVELS } from './levels.js';
 import { canPlace, createMatch, isStuck } from './logic.js';
+import { scriptedBoards, shouldSkipOnboarding } from './onboarding.js';
+import { beginRun, milestoneHit, noteLoss, noteSuccess, shouldShowWelcome, STREAK_RESET_COPY, bandShapes } from './retention.js';
 import { initialHaptics, initialMotion, shouldVibrate } from './settings.js';
 import { drawScene } from './render.js';
 import { mulberry32 } from './rng.js';
@@ -132,6 +135,13 @@ function start() {
   let playMs = progress.run?.playMs || 0;
   let sawStuck = progress.run?.sawStuck === true;
   let mode = progress.run?.mode === 'daily' ? 'daily' : 'arcade';
+  let mercy = progress.mercy || { lossesInRow: 0, queued: 0 };
+  let easyRun = progress.easyRun === true;
+  let lossNoted = progress.run?.phase === 'game_over';
+  let onboardingIndex = null;
+  let onboardingStarted = 0;
+  let moves = 0;
+  let dailyNote = '';
   let lastTick = performance.now();
   let pointer = createPointerState();
   let pointerKind = 'mouse';
@@ -146,22 +156,84 @@ function start() {
     return LEVELS[id] ?? LEVELS['round-01'];
   }
 
+  function scoreTuning() {
+    return {
+      ...tuning.score,
+      graceMoves: retention.feedback.runStreak.graceMoves,
+      bonusPerStep: retention.feedback.runStreak.bonusPerStep
+    };
+  }
+
+  function dealPool(_clears, score) {
+    return bandShapes({
+      score,
+      easy: easyRun,
+      pools: pacing.difficulty.pools,
+      ramp: retention.difficulty.rampByScore
+    });
+  }
+
+  function utcSeed() {
+    return dateSeed(formatUtcDate(new Date()));
+  }
+
   function makeMatch(saved) {
+    const dailyTarget = dailyObjective(utcSeed(), retention.dailyChallenge.objectiveRange);
     return createMatch({
       grid: tuning.grid,
       traySize: tuning.traySize,
-      score: tuning.score,
+      score: scoreTuning(),
       rng: mulberry32(mode === 'daily'
-        ? dateSeed(formatLocalDate(new Date()))
+        ? utcSeed()
         : ((Date.now() ^ ((levelIndex + 1) * 997)) >>> 0)),
-      targetClears: saved?.targetClears || level().targetClears,
-      poolFor: (clears) => pacer.shapePool(clears),
+      targetClears: saved?.targetClears || (mode === 'daily' ? dailyTarget : level().targetClears),
+      poolFor: dealPool,
       palette,
       saved
     });
   }
 
-  let match = makeMatch(progress.run);
+  function scriptedMatch(index, keptScore = 0) {
+    const script = scriptedBoards()[index];
+    return createMatch({
+      grid: tuning.grid,
+      traySize: tuning.traySize,
+      score: scoreTuning(),
+      rng: () => 0,
+      targetClears: 99,
+      poolFor: () => ['dot'],
+      palette,
+      saved: {
+        board: script.board,
+        pieces: script.pieces,
+        score: keptScore,
+        phase: 'playing',
+        targetClears: 99
+      }
+    });
+  }
+
+  function startEasyRun() {
+    const started = beginRun(mercy);
+    mercy = started.mercy;
+    easyRun = started.easy;
+    lossNoted = false;
+  }
+
+  let match;
+  if (progress.run) match = makeMatch(progress.run);
+  else if (retention.onboarding.enabled && !shouldSkipOnboarding(progress)) {
+    onboardingIndex = 0;
+    onboardingStarted = performance.now();
+    match = scriptedMatch(0);
+  } else match = makeMatch();
+
+  function trackRunStart() {
+    tracker.track('run_start', {
+      mode: mode === 'daily' ? 'daily' : 'endless',
+      run_index: sessions
+    });
+  }
 
   function screen() {
     if (!consent) return 'age_gate';
@@ -177,9 +249,17 @@ function start() {
     if (!installDay) installDay = today;
     const days = daysSinceInstall(installDay, today);
     if (sessions === 0) tracker.track('first_open', { game: 'gridrift' });
+    const isFirst = sessions === 0;
     sessions += 1;
     tracker.track('session_start', { game: 'gridrift', days_since_install: days });
+    tracker.track('app_open', {
+      is_first: isFirst,
+      days_since_install: days,
+      streak: daily.streak || 0
+    });
     tracker.track('round_start', { round: level().id });
+    if (onboardingIndex === null) trackRunStart();
+    else tracker.track('onboarding_step', { step: onboardingIndex + 1 });
     persist();
   }
 
@@ -203,6 +283,9 @@ function start() {
       tutorialSeen: progress.tutorialSeen === true,
       sessions,
       installDay,
+      lastSeen: Date.now(),
+      easyRun,
+      mercy,
       settings: { reducedMotion, haptics: hapticsOn },
       daily,
       run: {
@@ -226,15 +309,22 @@ function start() {
         playMs: Math.floor(playMs),
         sawStuck,
         mode,
+        dryMoves: state.dryMoves,
         phase: state.phase
       }
     });
   }
 
   function openEntry() {
-    if (progress.run) overlay = { screen: 'welcome_back' };
-    else if (!progress.tutorialSeen) overlay = { screen: 'tutorial', step: 0 };
-    else overlay = null;
+    const away = retention.persistence.welcomeBack;
+    if (away.enabled && shouldShowWelcome({
+      run: progress.run,
+      lastSeen: progress.lastSeen,
+      now: Date.now(),
+      minAwayMinutes: away.minAwayMinutes
+    })) {
+      overlay = { screen: 'welcome_back' };
+    } else overlay = null;
     publishOverlay(true);
   }
 
@@ -249,12 +339,37 @@ function start() {
     navigator.vibrate(lines >= 3 ? [16, 20, 16] : [12]);
   }
 
-  function maybeEarnFreeze() {
-    const earned = Math.floor((match.state.totalClears || 0) / 8);
-    if (earned <= (daily.marks || 0)) return;
-    let next = daily;
-    for (let mark = daily.marks || 0; mark < earned; mark += 1) next = earnFreeze(next, 'play');
-    daily = { ...next, marks: earned };
+  function handoff(keptScore) {
+    onboardingIndex = null;
+    progress = { ...progress, tutorialSeen: true };
+    startEasyRun();
+    const board = Array.from({ length: tuning.grid }, () => Array(tuning.grid).fill(0));
+    match = makeMatch({
+      board,
+      pieces: [null, null, null],
+      score: keptScore,
+      phase: 'playing',
+      targetClears: level().targetClears
+    });
+    overlay = null;
+    pointer = createPointerState();
+    persist();
+  }
+
+  function advanceOnboarding() {
+    const kept = match.state.score;
+    if (onboardingIndex < scriptedBoards().length - 1) {
+      onboardingIndex += 1;
+      match = scriptedMatch(onboardingIndex, kept);
+      pointer = createPointerState();
+      tracker.track('onboarding_step', { step: onboardingIndex + 1 });
+      persist();
+      return;
+    }
+    const elapsed = onboardingStarted ? Math.round(performance.now() - onboardingStarted) : 0;
+    handoff(kept);
+    tracker.track('onboarding_complete', { ms: elapsed });
+    trackRunStart();
   }
 
   function interstitialAllowed(breakType) {
@@ -274,11 +389,32 @@ function start() {
 
   function finishRound() {
     pacer.recordRoundEnded();
+    if (!easyRun) mercy = noteSuccess(mercy);
     if (mode === 'daily') {
-      const next = completeDaily(daily, formatLocalDate(new Date()));
-      daily = next;
-      if (next.status === 'started' || next.status === 'continued' || next.status === 'frozen') {
-        tracker.track('daily_complete', { streak: next.streak, freezes: next.freezes });
+      const before = daily.streak || 0;
+      const beforeFreezes = daily.freezes || 0;
+      daily = settleDaily(daily, streakDay(new Date(), retention.dayStreak.rolloverHourLocal), {
+        rewardAmount: retention.dailyChallenge.reward.amount,
+        earnEveryNDays: retention.dayStreak.freezes.earnEveryNDays
+      });
+      dailyNote = daily.status === 'reset' ? STREAK_RESET_COPY : '';
+      const hit = milestoneHit(before, daily.streak, retention.dayStreak.milestones);
+      if (hit && retention.dayStreak.milestoneFx) {
+        audio.play('sfx.streak.3');
+        vibrateFor(2);
+      }
+      if (['started', 'continued', 'frozen', 'reset'].includes(daily.status)) {
+        tracker.track('daily_complete', {
+          streak: daily.streak,
+          freezes: daily.freezes,
+          seed: utcSeed(),
+          ms: Math.round(playMs)
+        });
+        tracker.track('streak_update', {
+          value: daily.streak,
+          freeze_used: daily.status === 'frozen'
+        });
+        if ((daily.freezes || 0) > beforeFreezes) tracker.track('freeze_earned', { freezes: daily.freezes });
       }
     }
     tracker.track('round_complete', { score: match.state.score, round: level().id });
@@ -289,7 +425,19 @@ function start() {
 
   function finishGame() {
     pacer.recordRoundEnded();
+    if (!lossNoted) {
+      mercy = easyRun ? { lossesInRow: 1, queued: 0 } : noteLoss(mercy, retention.difficulty.mercy.afterLossesInRow);
+      easyRun = false;
+      lossNoted = true;
+    }
     tracker.track('game_over', { score: match.state.score });
+    tracker.track('run_end', {
+      score: match.state.score,
+      best: Math.max(progress.bestScore || 0, match.state.score),
+      is_new_best: match.state.score > (progress.bestScore || 0),
+      moves,
+      cause: 'stuck'
+    });
     audio.play('sfx.game_over');
     const rewardedAllowed = ads.canOfferRewarded('continue');
     const continueOffered = canOfferContinue(continueUses, rewardedAllowed);
@@ -363,11 +511,14 @@ function start() {
     mode = 'arcade';
     resetRunCounters();
     rewardKind = null;
+    startEasyRun();
     match = makeMatch();
+    moves = 0;
     overlay = null;
     pointer = createPointerState();
     armIgnore();
     tracker.track('restart', {});
+    trackRunStart();
     tap();
     persist();
   }
@@ -486,20 +637,6 @@ function start() {
       openEntry();
       return;
     }
-    if (id === 'tutorial_next') {
-      const step = (overlay?.step ?? 0) + 1;
-      audio.play(feedback.config.sounds.tutorial);
-      if (step < 3) {
-        overlay = { screen: 'tutorial', step };
-        publishOverlay(true);
-        return;
-      }
-      progress = { ...progress, tutorialSeen: true };
-      overlay = null;
-      armIgnore();
-      persist();
-      return;
-    }
     if (id === 'resume') {
       resumeRun();
       return;
@@ -522,11 +659,16 @@ function start() {
       levelIndex = 0;
       resetRunCounters();
       rewardKind = null;
+      onboardingIndex = null;
+      startEasyRun();
       match = makeMatch();
+      moves = 0;
       pointer = createPointerState();
       overlay = null;
       armIgnore();
       tap();
+      tracker.track('daily_start', { seed: utcSeed() });
+      trackRunStart();
       persist();
       return;
     }
@@ -535,16 +677,16 @@ function start() {
       mode = 'arcade';
       resetRunCounters();
       rewardKind = null;
+      onboardingIndex = null;
+      progress = { ...progress, tutorialSeen: true };
+      startEasyRun();
       match = makeMatch();
+      moves = 0;
       pointer = createPointerState();
       tap();
-      if (!progress.tutorialSeen) {
-        overlay = { screen: 'tutorial', step: 0 };
-        publishOverlay(true);
-        return;
-      }
       overlay = null;
       armIgnore();
+      trackRunStart();
       persist();
       return;
     }
@@ -639,6 +781,7 @@ function start() {
       step: overlay?.step || 0,
       score: state.score,
       bestScore: Math.max(progress.bestScore || 0, state.score),
+      streak: daily.streak || 0,
       bestStreak: state.bestStreak,
       roundName: level().name
     });
@@ -674,7 +817,7 @@ function start() {
 
   function liftPx() {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    if (coarse || pointerKind === 'touch') return feedback.config.dragLiftPx;
+    if (coarse || pointerKind === 'touch') return retention.onboarding.dragOffsetPx;
     return 0;
   }
 
@@ -748,6 +891,7 @@ function start() {
         return;
       }
       audio.play('sfx.place');
+      moves += 1;
       tracker.track('piece_placed', { cells: result.gained, x: reduced.effect.x, y: reduced.effect.y });
       if (result.lines > 0) {
         const burst = feedback.clear({
@@ -763,9 +907,17 @@ function start() {
         });
         playSounds(burst.sounds, burst.pitch);
         vibrateFor(result.lines);
-        maybeEarnFreeze();
         tracker.track('lines_cleared', { lines: result.lines, score: match.state.score });
+        tracker.track('line_clear', {
+          lines: result.lines,
+          combo: result.combo || 0,
+          run_streak: match.state.streak
+        });
         if (result.combo >= 2) tracker.track('combo', { lines: result.combo });
+      }
+      if (onboardingIndex !== null && result.lines > 0) {
+        advanceOnboarding();
+        return;
       }
       persist();
       if (result.roundComplete) finishRound();
@@ -854,9 +1006,11 @@ function start() {
       round: level().name,
       clears: state.roundClears,
       target: state.targetClears,
-      goal: mode === 'daily'
-        ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}`
-        : 'Fill a row or column',
+      goal: onboardingIndex !== null
+        ? scriptedBoards()[onboardingIndex].prompt
+        : mode === 'daily'
+          ? `Daily streak ${daily.streak || 0} · freezes ${daily.freezes || 0}${dailyNote ? ` · ${dailyNote}` : ''}`
+          : `Clear ${state.targetClears} lines`,
       meter: Math.max(0, Math.min(1, state.streak / meterMax)),
       meterMax,
       celebrate: celebrationLevel(state.streak, steps),

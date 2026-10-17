@@ -24,4 +24,13 @@ test('the public mixpanel token lives in config and not in source', () => {
   assert.match(main, /tracker\.track\('first_open'/);
   assert.match(main, /tracker\.track\('session_start', \{ game: 'gridrift', days_since_install: days \}\)/);
   assert.match(main, /tracker\.track\('daily_complete'/);
+  assert.match(main, /tracker\.track\('app_open'/);
+  assert.match(main, /tracker\.track\('onboarding_step'/);
+  assert.match(main, /tracker\.track\('onboarding_complete'/);
+  assert.match(main, /tracker\.track\('run_start'/);
+  assert.match(main, /tracker\.track\('line_clear'/);
+  assert.match(main, /tracker\.track\('run_end'/);
+  assert.match(main, /tracker\.track\('daily_start'/);
+  assert.match(main, /tracker\.track\('streak_update'/);
+  assert.match(main, /tracker\.track\('freeze_earned'/);
 });

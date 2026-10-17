@@ -35,8 +35,11 @@ const EMPTY_SAVE = {
   tutorialSeen: false,
   sessions: 0,
   installDay: '',
+  lastSeen: 0,
+  easyRun: false,
+  mercy: { lossesInRow: 0, queued: 0 },
   settings: { reducedMotion: null, haptics: null },
-  daily: { lastCompleted: '', streak: 0, freezes: 0, marks: 0 },
+  daily: { lastCompleted: '', streak: 0, freezes: 0, marks: 0, completions: 0, currency: 0 },
   run: null
 };
 
